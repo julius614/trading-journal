@@ -18,3 +18,10 @@ its source, how it was captured, and the key takeaways I can apply in my trading
 - Each note starts with a **Source & capture** block saying where the content came from
   and whether it was read in full or reconstructed from excerpts.
 - Each note ends with **Self-check questions** and **Applying it to my journal**.
+
+## Skill
+
+All of these notes are packaged as the `quant-trading-mentor` Claude Code skill in
+[`.claude/skills/quant-trading-mentor/SKILL.md`](../.claude/skills/quant-trading-mentor/SKILL.md).
+It reviews strategies and journal trades, builds study plans, and answers quant career
+questions using this knowledge base.
