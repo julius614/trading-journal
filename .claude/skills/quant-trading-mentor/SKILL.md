@@ -15,6 +15,8 @@ repo root).
 | Quant trader role, daily routine, skills, salary, courses | `knowledge-base/quantitative-trader/README.md` |
 | Quant developer role, Python vs C++, roadmap, interviews | `knowledge-base/quantitative-developer/README.md` |
 | EPAT syllabus, format, fees snapshot, self-study map | `knowledge-base/epat/README.md` |
+| 15-min ORB "Max way" strategy: rules, research, validation plan | `knowledge-base/strategies/orb-15min-max/README.md` |
+| ORB backtester (Python) and TradingView strategy | `strategies/orb_15min/README.md` |
 
 ## Ground rules
 

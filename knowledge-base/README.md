@@ -12,6 +12,12 @@ its source, how it was captured, and the key takeaways I can apply in my trading
 | Quantitative Developer | [QuantInsti — Quantitative Developer Guide: Salary, Roadmap, Tools & Career Tips](https://www.quantinsti.com/articles/quantitative-developer/) | [quantitative-developer/README.md](quantitative-developer/README.md) |
 | EPAT (course) | [QuantInsti — Executive Programme in Algorithmic Trading](https://www.quantinsti.com/epat) | [epat/README.md](epat/README.md) |
 
+## Strategies
+
+| Strategy | Source | Notes | Code |
+|---|---|---|---|
+| 15-min ORB "the MAX way" | Max Options Trading (YouTube) | [strategies/orb-15min-max/README.md](strategies/orb-15min-max/README.md) | [strategies/orb_15min/](../strategies/orb_15min/) |
+
 ## Conventions
 
 - One folder per topic, with a `README.md` holding the study notes.

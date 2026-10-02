@@ -1,0 +1,115 @@
+// 15-minute Opening Range Breakout - "Max way" rules (trading-journal version)
+// Same rules as orb.py. Use on a 15-minute chart of a US stock/ETF/index future.
+// Rules and sources: knowledge-base/strategies/orb-15min-max/README.md
+// Set commission and slippage in the strategy's Properties tab before trusting results.
+//@version=5
+strategy("ORB 15m - Max way (journal)", overlay=true, initial_capital=10000,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100,
+     process_orders_on_close=true)
+
+// ---------------------------------------------------------------- inputs
+tz        = input.string("America/New_York", "Exchange timezone")
+sessRth   = input.session("0930-1600", "Regular session")
+sessOR    = input.session("0930-0945", "Opening range (first 15 min)")
+sessFlat  = input.session("1545-1600", "Flatten during (last bar)")
+mode      = input.string("Breakout", "Entry mode", options=["Breakout", "Break & retest"])
+stopMode  = input.string("Midline", "Stop", options=["Midline", "Opposite side"])
+targetR   = input.float(2.0, "Target in R (0 = hold to close)", minval=0, step=0.5)
+exitFail  = input.bool(true, "Exit when a bar closes back inside the range")
+allowLong = input.bool(true, "Allow longs")
+allowShrt = input.bool(true, "Allow shorts")
+useBias   = input.bool(false, "Only trade with bias (today's OR vs yesterday's)")
+maxWidth  = input.float(0.0, "Skip if OR width % above (0 = off)", minval=0, step=0.1)
+tolPct    = input.float(10.0, "Retest tolerance (% of OR width)", minval=0)
+maxBars   = input.int(8, "Retest must come within N bars", minval=1)
+
+if timeframe.period != "15"
+    runtime.error("Use a 15-minute chart: the rules need 15-minute candle closes.")
+
+// ---------------------------------------------------------------- opening range
+inSess  = not na(time(timeframe.period, sessRth, tz))
+inOR    = not na(time(timeframe.period, sessOR, tz))
+lastBar = not na(time(timeframe.period, sessFlat, tz))
+firstOR = inOR and not inOR[1]
+
+var float orh = na
+var float orl = na
+var float prevMid = na
+var bool  traded = false
+var int   pendDir = 0
+var int   pendBar = na
+var float stopPx = na
+var float tgtPx = na
+var int   entryBar = na
+
+if firstOR
+    prevMid := na(orh) ? na : (orh + orl) / 2
+    orh := high
+    orl := low
+    traded := false
+    pendDir := 0
+else if inOR
+    orh := math.max(orh, high)
+    orl := math.min(orl, low)
+
+mid      = (orh + orl) / 2
+bias     = na(prevMid) ? 0 : mid > prevMid ? 1 : mid < prevMid ? -1 : 0
+widthPct = (orh - orl) / mid * 100
+orDone   = inSess and not inOR and not na(orh)
+canTrade = orDone and not lastBar and not traded and strategy.position_size == 0 and (maxWidth == 0 or widthPct <= maxWidth)
+tol      = tolPct / 100 * (orh - orl)
+longBrk  = close > orh
+shortBrk = close < orl
+
+// ---------------------------------------------------------------- signals
+sig = 0
+if canTrade
+    if mode == "Breakout"
+        sig := longBrk and allowLong ? 1 : shortBrk and allowShrt ? -1 : 0
+    else
+        if pendDir == 0
+            pendDir := longBrk and allowLong ? 1 : shortBrk and allowShrt ? -1 : 0
+            pendBar := bar_index
+        else
+            failed = pendDir == 1 ? close <= orh : close >= orl
+            if failed
+                pendDir := shortBrk and allowShrt ? -1 : longBrk and allowLong ? 1 : 0
+                pendBar := bar_index
+            else if bar_index - pendBar > maxBars
+                pendDir := 0
+            else if pendDir == 1 and low <= orh + tol
+                sig := 1
+            else if pendDir == -1 and high >= orl - tol
+                sig := -1
+
+if sig != 0
+    traded := true  // one setup per day, even when the bias filter skips it
+    if not useBias or bias == sig
+        stopPx := stopMode == "Midline" ? mid : sig == 1 ? orl : orh
+        risk = (close - stopPx) * sig
+        if risk > 0
+            tgtPx := targetR > 0 ? close + sig * targetR * risk : na
+            entryBar := bar_index
+            strategy.entry(sig == 1 ? "L" : "S", sig == 1 ? strategy.long : strategy.short,
+                 comment=mode == "Breakout" ? "ORB" : "BNR")
+            // place the bracket now so the stop is live from the first bar after the fill
+            strategy.exit(sig == 1 ? "XL" : "XS", sig == 1 ? "L" : "S", stop=stopPx, limit=tgtPx)
+
+// ---------------------------------------------------------------- exits
+if strategy.position_size > 0
+    strategy.exit("XL", "L", stop=stopPx, limit=tgtPx)
+    if exitFail and close <= orh and bar_index > entryBar
+        strategy.close("L", comment="failed")
+if strategy.position_size < 0
+    strategy.exit("XS", "S", stop=stopPx, limit=tgtPx)
+    if exitFail and close >= orl and bar_index > entryBar
+        strategy.close("S", comment="failed")
+if lastBar
+    strategy.close_all(comment="eod")
+
+// ---------------------------------------------------------------- plots
+zoneCol = bias == 1 ? color.new(color.green, 85) : bias == -1 ? color.new(color.red, 85) : color.new(color.gray, 85)
+pH = plot(orDone ? orh : na, "OR high", color.green, 2, plot.style_linebr)
+pL = plot(orDone ? orl : na, "OR low", color.red, 2, plot.style_linebr)
+plot(orDone ? mid : na, "OR mid", color.gray, 1, plot.style_circles)
+fill(pH, pL, zoneCol)
