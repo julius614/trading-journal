@@ -171,7 +171,7 @@ then consider a structured programme like EPAT if I want a certificate or placem
 - [Quant Trader Salary](https://www.quantinsti.com/blog/salary-quants-really-earn)
 - [Top Skills for a Quant Trader Interview](https://blog.quantinsti.com/top-skills-nailing-quant-trader-interview/)
 - [Algorithmic Trader vs Quant Developer](https://blog.quantinsti.com/algorithmic-trader-vs-quant-developer/)
-- [EPAT — Executive Programme in Algorithmic Trading](https://www.quantinsti.com/epat)
+- [EPAT — Executive Programme in Algorithmic Trading](https://www.quantinsti.com/epat) — see [EPAT notes](../epat/README.md)
 - [EPAT vs Quantra bundle comparison](https://www.quantinsti.com/epat-quantra-comparison)
 - [Quantra — all courses](https://quantra.quantinsti.com/courses)
 - [Learn Algorithmic Trading: Steps, Skills & Career](https://www.quantinsti.com/articles/learn-algorithmic-trading/)
