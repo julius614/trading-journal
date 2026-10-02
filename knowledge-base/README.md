@@ -1,0 +1,17 @@
+# Trading Knowledge Base
+
+Study notes on trading education material, organised by topic. Each entry records
+its source, how it was captured, and the key takeaways I can apply in my trading.
+
+## Index
+
+| Topic | Source | Notes |
+|---|---|---|
+| AI for Trading | [QuantInsti — AI for Trading: How It Works, Uses, Risks, and Skills Guide](https://www.quantinsti.com/articles/ai-for-trading/) | [ai-for-trading/README.md](ai-for-trading/README.md) |
+
+## Conventions
+
+- One folder per topic, with a `README.md` holding the study notes.
+- Each note starts with a **Source & capture** block saying where the content came from
+  and whether it was read in full or reconstructed from excerpts.
+- Each note ends with **Self-check questions** and **Applying it to my journal**.
