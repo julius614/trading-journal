@@ -9,6 +9,7 @@ its source, how it was captured, and the key takeaways I can apply in my trading
 |---|---|---|
 | AI for Trading | [QuantInsti — AI for Trading: How It Works, Uses, Risks, and Skills Guide](https://www.quantinsti.com/articles/ai-for-trading/) | [ai-for-trading/README.md](ai-for-trading/README.md) |
 | Quantitative Trader | [QuantInsti — Quant Trader Role: Skills, Salary & Career Path Guide](https://www.quantinsti.com/articles/quantitative-trader/) | [quantitative-trader/README.md](quantitative-trader/README.md) |
+| Quantitative Developer | [QuantInsti — Quantitative Developer Guide: Salary, Roadmap, Tools & Career Tips](https://www.quantinsti.com/articles/quantitative-developer/) | [quantitative-developer/README.md](quantitative-developer/README.md) |
 
 ## Conventions
 

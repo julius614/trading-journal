@@ -175,4 +175,4 @@ then consider a structured programme like EPAT if I want a certificate or placem
 - [EPAT vs Quantra bundle comparison](https://www.quantinsti.com/epat-quantra-comparison)
 - [Quantra — all courses](https://quantra.quantinsti.com/courses)
 - [Learn Algorithmic Trading: Steps, Skills & Career](https://www.quantinsti.com/articles/learn-algorithmic-trading/)
-- See also: [AI for Trading notes](../ai-for-trading/README.md)
+- See also: [AI for Trading notes](../ai-for-trading/README.md) · [Quantitative Developer notes](../quantitative-developer/README.md)
