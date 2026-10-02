@@ -99,7 +99,38 @@ investment banks. (related)
 
 Pay is **strongly performance-driven** — bonuses make up much of the total for experienced traders.
 
-## 8. Key takeaways
+## 8. Quant trader courses & algorithmic trading
+
+Section anchor: <https://www.quantinsti.com/articles/quantitative-trader/#quant-trader-courses-and-algorithmic-trading>
+
+- Many institutions offer quant finance and quant trading courses, **online and offline**. (article)
+- QuantInsti's own offerings, as the article and related pages describe them:
+
+| | **EPAT** (Executive Programme in Algorithmic Trading) | **Quantra** |
+|---|---|---|
+| Format | Live, instructor-led, **6 months**, weekends only; recordings available | **Self-paced**, interactive, Python-focused |
+| Who it's for | Working professionals and non-programmers | Any level; pick single courses or a bundle |
+| Scope | Core and AI-driven strategies, which can be extended to automated and high-frequency trading | **60+ courses** in **8 learning tracks**, **185+ strategies** |
+| Topics | Full programme: stats, Python, strategies, execution, risk | Quant analysis, futures and options, AI/ML models, crypto and forex, portfolio management |
+| Faculty / support | ~20 industry experts, one-on-one faculty access | Course authors from institutions and industry |
+| Placement help | Lifetime | 1 year (bundle) |
+| Practice | — | Integrated with **Blueshift** for backtesting and live implementation |
+
+(article + related)
+
+- Roles these courses prepare you for: **quant trader, quant developer, quant analyst,
+  quant researcher, data scientist**. (article/related)
+- EPAT is described as the first **proctored certification** in algorithmic trading. (related)
+- **A note on bias:** this section is QuantInsti promoting its own products. Choose based
+  on cost, format and what you actually need to learn, and use the free material
+  (blogs, books, the Blueshift sandbox) first.
+
+**How I'd use it for self-study:** start with Quantra's
+[8-Course Guide to Quantitative Trading for Beginners](https://quantra.quantinsti.com/learning-track/guide-quantitative-trading-beginners)
+→ the ML/AI tracks (see [AI for Trading notes](../ai-for-trading/README.md)) → only
+then consider a structured programme like EPAT if I want a certificate or placement help.
+
+## 9. Key takeaways
 
 1. A quant trader is the **live-market owner** of a strategy: execution, monitoring and risk.
 2. A good strategy is **rules first**: designed, backtested, then run and watched.
@@ -114,6 +145,7 @@ Pay is **strongly performance-driven** — bonuses make up much of the total for
 3. Why does a quant trader need risk management even when the model is good?
 4. Which products does the article say quant traders should have experience with?
 5. What is a realistic route into the role without a quant PhD?
+6. How do EPAT and Quantra differ in format, scope and support?
 
 ## Applying it to my journal
 
@@ -139,4 +171,8 @@ Pay is **strongly performance-driven** — bonuses make up much of the total for
 - [Quant Trader Salary](https://www.quantinsti.com/blog/salary-quants-really-earn)
 - [Top Skills for a Quant Trader Interview](https://blog.quantinsti.com/top-skills-nailing-quant-trader-interview/)
 - [Algorithmic Trader vs Quant Developer](https://blog.quantinsti.com/algorithmic-trader-vs-quant-developer/)
+- [EPAT — Executive Programme in Algorithmic Trading](https://www.quantinsti.com/epat)
+- [EPAT vs Quantra bundle comparison](https://www.quantinsti.com/epat-quantra-comparison)
+- [Quantra — all courses](https://quantra.quantinsti.com/courses)
+- [Learn Algorithmic Trading: Steps, Skills & Career](https://www.quantinsti.com/articles/learn-algorithmic-trading/)
 - See also: [AI for Trading notes](../ai-for-trading/README.md)
