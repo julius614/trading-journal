@@ -8,6 +8,7 @@ its source, how it was captured, and the key takeaways I can apply in my trading
 | Topic | Source | Notes |
 |---|---|---|
 | AI for Trading | [QuantInsti — AI for Trading: How It Works, Uses, Risks, and Skills Guide](https://www.quantinsti.com/articles/ai-for-trading/) | [ai-for-trading/README.md](ai-for-trading/README.md) |
+| Quantitative Trader | [QuantInsti — Quant Trader Role: Skills, Salary & Career Path Guide](https://www.quantinsti.com/articles/quantitative-trader/) | [quantitative-trader/README.md](quantitative-trader/README.md) |
 
 ## Conventions
 

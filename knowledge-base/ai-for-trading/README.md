@@ -182,3 +182,4 @@ Technical:
 - [Quantra — Introduction to Machine Learning and AI for Trading](https://quantra.quantinsti.com/course/introduction-to-machine-learning-for-trading)
 - [Quantra — Agentic AI for Trading](https://quantra.quantinsti.com/course/agentic-ai-trading)
 - [Quantra — Artificial Intelligence in Trading Advanced (learning track)](https://quantra.quantinsti.com/learning-track/machine-learning-deep-learning-trading-2)
+- See also: [Quantitative Trader notes](../quantitative-trader/README.md)
