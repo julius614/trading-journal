@@ -43,7 +43,13 @@ class FilterConfig:
     news_buffer_minutes: int = 15
     news_currencies: Tuple[str, ...] = ("USD", "EUR", "GBP")
     news_impacts: Tuple[str, ...] = ("high",)
-    rollover_start: time = time(21, 50)
+    # Rollover (17:00 New York) moves between 22:00 UTC (winter) and 21:00 UTC (US summer
+    # time). "ny_close" pauses entries 16:50-17:15 New York time all year (= 21:50-22:15
+    # UTC in winter, 20:50-21:15 UTC in summer); "utc" uses the fixed UTC times below.
+    rollover_anchor: str = "ny_close"
+    rollover_ny_start: time = time(16, 50)
+    rollover_ny_end: time = time(17, 15)
+    rollover_start: time = time(21, 50)    # used when rollover_anchor == "utc"
     rollover_end: time = time(22, 15)
 
 

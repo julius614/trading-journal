@@ -176,3 +176,39 @@ def test_without_costs_noise_gets_traded(triangle):
     """Why the gate matters: at zero cost, ordinary noise beyond |Z| = 2 is traded too."""
     res = replay(triangle, spreads=ZERO, commission=0.0)
     assert len(res["baskets"]) > 6               # more than the 6 planted dislocations
+
+
+def _utc(*args):
+    return datetime(*args, tzinfo=timezone.utc)
+
+
+def test_rollover_follows_new_york_close_in_summer_and_winter():
+    rm = RiskManager(RiskConfig(), FilterConfig())
+    # summer (US daylight saving): rollover 17:00 NY = 21:00 UTC
+    assert rm.in_rollover(_utc(2026, 7, 7, 21, 5))
+    assert rm.in_rollover(_utc(2026, 7, 7, 20, 50))
+    assert not rm.in_rollover(_utc(2026, 7, 7, 20, 45))
+    assert not rm.in_rollover(_utc(2026, 7, 7, 21, 20))
+    # winter: rollover 17:00 NY = 22:00 UTC (the original 21:50-22:15 UTC window)
+    assert rm.in_rollover(_utc(2026, 1, 15, 22, 0))
+    assert rm.in_rollover(_utc(2026, 1, 15, 21, 50))
+    assert not rm.in_rollover(_utc(2026, 1, 15, 21, 5))
+    assert not rm.in_rollover(_utc(2026, 1, 15, 22, 15))
+
+
+def test_rollover_dst_switch_days():
+    rm = RiskManager(RiskConfig(), FilterConfig())
+    # US clocks go forward Sun 8 Mar 2026 and back Sun 1 Nov 2026
+    assert not rm.in_rollover(_utc(2026, 3, 6, 21, 0))     # Fri before: winter
+    assert rm.in_rollover(_utc(2026, 3, 9, 21, 0))         # Mon after: summer
+    assert rm.in_rollover(_utc(2026, 10, 30, 21, 0))       # Fri before: summer
+    assert not rm.in_rollover(_utc(2026, 11, 2, 21, 0))    # Mon after: winter
+    assert rm.in_rollover(_utc(2026, 11, 2, 22, 0))
+
+
+def test_rollover_utc_mode_keeps_fixed_window():
+    rm = RiskManager(RiskConfig(), FilterConfig(rollover_anchor="utc"))
+    assert not rm.in_rollover(_utc(2026, 7, 7, 21, 5))
+    assert rm.in_rollover(_utc(2026, 7, 7, 22, 0))
+    with pytest.raises(ValueError):
+        RiskManager(RiskConfig(), FilterConfig(rollover_anchor="london"))

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from zoneinfo import ZoneInfo
 
 from loguru import logger
 
@@ -15,6 +16,8 @@ from ..amd_fx.execution import SymbolInfo
 from ..amd_fx.risk_manager import in_time_window
 from .config import CONTRACT_SIZE, FilterConfig, RiskConfig
 from .fee_gate import base_ccy, convert, quote_ccy
+
+NEW_YORK = ZoneInfo("America/New_York")
 
 # Leg directions for a LONG spread (buy EURGBP, sell EURUSD, buy GBPUSD); short = negated.
 LONG_SPREAD_SIDES: Dict[str, int] = {"EURGBP": 1, "EURUSD": -1, "GBPUSD": 1}
@@ -144,6 +147,9 @@ class RiskManager:
 
     def __init__(self, risk: RiskConfig, filters: FilterConfig,
                  news: Optional[NewsCalendar] = None) -> None:
+        if filters.rollover_anchor not in ("ny_close", "utc"):
+            raise ValueError(f"rollover_anchor must be 'ny_close' or 'utc', "
+                             f"got {filters.rollover_anchor!r}")
         self.risk = risk
         self.filters = filters
         self.news = news or NewsCalendar()
@@ -178,7 +184,13 @@ class RiskManager:
         return self.state.locked
 
     def in_rollover(self, now: datetime) -> bool:
-        return in_time_window(now.time(), self.filters.rollover_start, self.filters.rollover_end)
+        f = self.filters
+        if f.rollover_anchor == "ny_close":
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=timezone.utc)
+            ny = now.astimezone(NEW_YORK).time()
+            return in_time_window(ny, f.rollover_ny_start, f.rollover_ny_end)
+        return in_time_window(now.time(), f.rollover_start, f.rollover_end)
 
     def entry_block(self, now: datetime) -> Tuple[bool, str]:
         """(blocked, reason) for opening a new basket right now."""

@@ -1,7 +1,8 @@
 # Triangular Stat-Arb (EURUSD / GBPUSD / EURGBP) — Strategy Review
 
 - **Source:** the user's spec (2026-10-03). **Code:** [`bots/statarb_3leg/`](../../../bots/statarb_3leg/).
-- **Status:** built and tested on synthetic data; **not yet measured on real broker data**.
+- **Status (2026-10-03):** measured on the user's broker data (May 2025 – Oct 2026). **No
+  tradeable edge** — see section 5.
 
 ## 1. Hypothesis
 EURGBP should equal EURUSD ÷ GBPUSD. If it drifts away, trade the gap back.
@@ -43,6 +44,23 @@ Synthetic check with 0.15-pip noise (typical M5 bar-timing noise): median gap 0.
 3. If some trades pass, inspect each one. Were they at rollover, at news, or on a single bad
    bar? Only gaps outside those count.
 4. Need ≥ 100 baskets with positive net P&L across different months before even a demo test.
+
+## 5. Real-data result (user's broker, M5, May 2025 – Oct 2026)
+| | Value |
+|---|---|
+| Gap size (EURGBP pips) | median 0.18, p90 0.73, p99 4.3, p99.9 9.6, max 22.9 |
+| Signals with \|Z\| > 2 | 4,466 (964 blocked by the rollover window) |
+| Median edge vs cost | 2.24 vs **7.10 pips** (broker's real spreads; ratio 0.34, needed 2.5) |
+| Baskets taken | 14, +$43.91 on $10,000, 86% wins, avg hold 4.3 bars |
+
+**Where the 14 came from:** 11 opened at 21:00–21:40 UTC on days from March onwards — US
+summer-time **rollover** (17:00 New York = 21:00 UTC), which the original fixed 21:50–22:15
+UTC pause didn't cover. Rollover gaps come from frozen EURGBP quotes and blown-out spreads;
+the backtest used MT5's recorded bar spread (~1.5 pips), but live rollover spreads are often
+5–20+ pips, so those fills aren't real. Outside rollover: 3 trades, +$7.58 in 16 months.
+
+**Fix:** the rollover pause now follows New York time (`rollover_anchor="ny_close"`). The
+conclusion stands: in normal hours the triangle's M5 gaps are far smaller than 3-leg costs.
 
 ## Self-check questions
 1. Why does Z use √(P + R) and not √P?

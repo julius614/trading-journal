@@ -23,7 +23,7 @@ legs, then close when the gap reverts.
 | `execution.py` | Broker interface + MT5 adapter (shared with `amd_fx`), paper broker, basket executor with rollback |
 | `main.py` | Async event loop (`--live` MT5, `--paper` replay) |
 | `backtest.py` | Replay three CSVs; P&L plus a deviation-vs-cost report |
-| `tests/` | 38 tests: Kalman, fee gate, position balancer, signals/end-to-end |
+| `tests/` | 41 tests: Kalman, fee gate, position balancer, signals/end-to-end, rollover/DST |
 
 ## The maths
 - **Spread:** `s = ln(EURGBP) − ln(EURUSD / GBPUSD)` (0 when the triangle is consistent).
@@ -55,13 +55,13 @@ legs, then close when the gap reverts.
 | Sizing | EURGBP **N** lots, EURUSD **N** lots, GBPUSD **N × EURGBP** lots. N = `notional_equity_mult` × equity in EUR ÷ 100,000, rounded down. EUR exposure cancels exactly, GBP to lot rounding, and USD is left with only the spread itself (~0). |
 | Prop Shield | Equity (realized + floating) down 2% from day start → close all legs, no entries until 00:00 UTC |
 | News | No new entries 15 min before or after high-impact USD/EUR/GBP events from your calendar CSV |
-| Rollover | No new entries 21:50–22:15 UTC |
+| Rollover | No new entries 16:50–17:15 **New York time** (`rollover_anchor="ny_close"`): 21:50–22:15 UTC in winter, **20:50–21:15 UTC during US summer time**. `rollover_anchor="utc"` restores a fixed 21:50–22:15 UTC window. |
 | Execution | Legs are sent in order; if one fails, filled legs are closed immediately (**rollback**). Failed closes are retried; a stuck leg is logged as CRITICAL. The open basket is saved to `data/statarb_3leg/basket_state.json`. |
 
 ## Setup and run (from the repo root)
 ```powershell
 pip install -r bots/statarb_3leg/requirements.txt
-pytest -q bots/statarb_3leg/tests            # 38 passed
+pytest -q bots/statarb_3leg/tests            # 41 passed
 ```
 
 ### 1. Download history, including EURGBP (MT5 open)
