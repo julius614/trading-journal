@@ -16,6 +16,11 @@ the hedge, then close when the gap closes.
 >   −4.8%, **7 of 9 years profitable**.
 > - EURUSD/GBPUSD, OANDA 2014 – 2020: 125 trades, +$363 (+3.6%), PF 1.14, max DD −4.3%.
 >
+> - **Pre-declared tuning** (entry Z × time stop, tune 2018–22 / validate 2023–24 / hold-out
+>   2025–26) **kept the defaults**: the tune-period winner (2.0, 96) failed validation and
+>   lost $290 in the hold-out. The default was positive in all three periods, but the hold-out
+>   was thin (+$49). Details in section 7 of the strategy note.
+>
 > Promising, not proven: about 1% a year at 1× notional, roughly 1.8 standard errors from
 > zero. Demo-trade before risking money. See
 > `knowledge-base/strategies/pairs-eurusd-gbpusd/README.md`. Education, not financial advice.
@@ -33,6 +38,7 @@ the hedge, then close when the gap closes.
 | `main.py` | `PairsBot` async loop (`--live` MT5, `--paper` replay) |
 | `backtest.py` | Replay two CSVs (first = y leg); P&L, swings vs costs, gate stats, β path, P&L by year; `--max-hold`, `--no-coint-gate` |
 | `sweep.py` | One-command ablation: old rules vs 48-bar stop vs gate vs both, same data and costs |
+| `tune.py` | Pre-declared grid (entry Z × time stop) with tune/validate/hold-out split and a fixed selection rule |
 | `tests/` | 50 tests: Kalman, cointegration, fee gate, position balancer, signals/end-to-end |
 
 ## The model

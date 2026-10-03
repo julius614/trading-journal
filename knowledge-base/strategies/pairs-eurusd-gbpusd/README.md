@@ -113,6 +113,42 @@ test of it. Sweep (`python -m bots.statarb_3leg.sweep …`), raw costs, $7/lot:
 4. **Next:** demo-trade AUD/NZD with the defaults for a few months, compare live fills and
    spreads with the backtest, and keep size at 1× until they agree.
 
+## 7. Pre-declared tuning (AUDUSD/NZDUSD, broker H1, 2018-09 → 2026-10)
+Protocol in `bots/statarb_3leg/tune.py`, committed (`5012601`) **before** the data was pushed
+(`6580de2`):
+- **Grid:** entry Z {1.75, 2.0, 2.5} × time stop {24, 48, 96} bars.
+- **Splits:** trades split by entry time into tune 2018–2022, validate 2023–2024, hold-out
+  2025–2026.
+- **Selection:** neighbour-median $/trade on the tune period, with ≥ 60 trades and PF > 1.
+- **Acceptance:** the pick replaces the default only if it is profitable on validate with
+  PF ≥ 1.1 and beats the default there.
+
+| Entry Z | Hold | Tune trades | Tune P&L | Tune PF | Val trades | Val P&L | Val PF | Hold-out trades | Hold-out P&L | Hold-out PF |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1.75 | 24 | 174 | +245 | 1.12 | 65 | +195 | 1.33 | 73 | −157 | 0.83 |
+| 1.75 | 48 | 121 | +283 | 1.15 | 48 | +312 | 1.66 | 49 | −82 | 0.90 |
+| 1.75 | 96 | 95 | +561 | 1.31 | 39 | +79 | 1.11 | 36 | −230 | 0.74 |
+| 2.00 | 24 | 109 | +105 | 1.08 | 35 | +145 | 1.53 | 47 | −25 | 0.96 |
+| **2.00** | **48** | **82** | **+540** | **1.41** | **30** | **+236** | **1.84** | **33** | **+49** | **1.09** |
+| 2.00 | 96 | 67 | +936 | 1.75 | 26 | +16 | 1.04 | 22 | −290 | 0.55 |
+| 2.50 | 24 | 43 | −352 | 0.58 | 9 | +34 | 1.48 | 19 | +55 | 1.20 |
+| 2.50 | 48 | 29 | −147 | 0.83 | 8 | +61 | 1.75 | 15 | +66 | 1.25 |
+| 2.50 | 96 | 23 | +49 | 1.06 | 7 | +26 | 1.22 | 12 | +74 | 1.32 |
+
+**Outcome:** the tune period picked **(2.0, 96)**. On validation it made only +$16 vs +$236 for
+the default, so the rule **rejected it and kept the default (2.0, 48)**. Its hold-out
+(−$290) confirms the rejection was right.
+
+**What it means**
+- **The default is the robust choice:** it's the only mid-grid setting that is positive in
+  tune, validate and hold-out.
+- **Longer holds fit 2018–2022 but fail afterwards** — exactly the overfitting the protocol
+  exists to catch.
+- **The recent period is weak:** 6 of 9 settings lost money in 2025–2026, and the default made
+  only +$49 (PF 1.09). Expect a thin live edge.
+- Entry Z 2.5 looks better recently but has very few trades (12–19) — too few to act on.
+- **No parameter change.** Next step: demo-trade the defaults and compare with the backtest.
+
 ## Self-check questions
 1. Why is a positive win rate (63%) still a losing strategy here?
 2. Why can a "reverted" exit lose money with a Kalman fair value?
