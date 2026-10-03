@@ -21,7 +21,7 @@ repo root).
 | AMD MT5 bot framework (sizing, Prop Shield, replay) | `bots/amd_fx/README.md` |
 | AMD tuning report (no edge found, 2014–2020) | `knowledge-base/strategies/amd-session-sweep/tuning-report.md` |
 | Triangular stat-arb review (retired, no edge) | `knowledge-base/strategies/statarb-triangle/README.md` |
-| Pairs trading EURUSD/GBPUSD H1 (Kalman hedge ratio) review and bot | `knowledge-base/strategies/pairs-eurusd-gbpusd/README.md`, `bots/statarb_3leg/README.md` |
+| Pairs trading H1 (AUDUSD/NZDUSD default, EURUSD/GBPUSD; Kalman hedge ratio, 48-bar stop, Engle–Granger gate) review and bot | `knowledge-base/strategies/pairs-eurusd-gbpusd/README.md`, `bots/statarb_3leg/README.md` |
 
 ## Ground rules
 

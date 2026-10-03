@@ -14,11 +14,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo root
 BETA, Y0, X0 = 0.6, 1.10, 1.27
 
 
-def make_pair(n_bars: int = 3000, swing_pips: float = 40.0, half_life: float = 15.0,
+def make_pair(n_bars: int = 3000, swing_pips: float = 40.0, half_life: float = 6.0,
               x_vol: float = 0.0015, seed: int = 7, start: str = "2024-01-01 00:00",
               y: str = "EURUSD", x: str = "GBPUSD") -> Dict[str, pd.DataFrame]:
     """ln(y) = BETA * ln(x) + alpha + s, with s a mean-reverting (OU) spread whose standard
-    deviation is about `swing_pips` y-pips. Hourly bars."""
+    deviation is about `swing_pips` y-pips. Hourly bars. The default 6-bar half-life is
+    fast enough for the 250-bar Engle-Granger gate to pass most of the time (at 15 bars it
+    passes only ~17% of windows - the test has little power on 250 bars)."""
     rng = np.random.default_rng(seed)
     idx = pd.date_range(start, periods=n_bars, freq="1h", tz="UTC")
     lx = np.log(X0) + np.cumsum(rng.normal(0, x_vol, n_bars))

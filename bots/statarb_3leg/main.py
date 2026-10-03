@@ -2,10 +2,10 @@
 
 Each loop: clock -> daily reset -> Prop Shield breaker -> new aligned H1 bar(s) ->
 Kalman hedge-ratio update -> exit checks for an open basket -> entry checks (news/rollover
-blackout, |Z| > entry, fee gate) -> two-leg order.
+blackout, |Z| > entry, rolling ADF + half-life gate, fee gate) -> two-leg order.
 
     python -m bots.statarb_3leg.main --live                      # MT5 (demo first!)
-    python -m bots.statarb_3leg.main --paper EURUSD=a.csv GBPUSD=b.csv
+    python -m bots.statarb_3leg.main --paper AUDUSD=a.csv NZDUSD=b.csv
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import asyncio
 import math
 import signal
 import sys
-from collections import Counter
+from collections import Counter, deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +23,9 @@ from typing import List, Optional
 import pandas as pd
 from loguru import logger
 
+import numpy as np
+
+from .cointegration import stationarity_gate
 from .config import AppConfig, load_config
 from .data_fetcher import PairFeed
 from .execution import Basket, Broker, BrokerError, MT5Broker, MultiLegExecutor
@@ -64,6 +67,9 @@ class PairsBot:
         self.blocked: Counter = Counter()
         self.spread_pips: List[float] = []
         self.betas: List[float] = []
+        self.window_y: deque = deque(maxlen=s.coint_window)
+        self.window_x: deque = deque(maxlen=s.coint_window)
+        self.coint_checks: List[tuple] = []          # (time, passed, pvalue, half_life)
         self._stop = asyncio.Event()
 
     def stop(self) -> None:
@@ -74,6 +80,8 @@ class PairsBot:
         bars = await self.feed.closed_bars(self.cfg.strategy.history_bars)
         for ts, row in bars.iterrows():
             self.last_output = self.kalman.update(row["log_y"], row["log_x"])
+            self.window_y.append(row["log_y"])
+            self.window_x.append(row["log_x"])
             self.last_bar = ts
         logger.info("Warm-up: {} bars, filter warm={}, beta={:.3f}, last bar {}", len(bars),
                     self.kalman.warm, self.kalman.beta, self.last_bar)
@@ -89,6 +97,8 @@ class PairsBot:
             bars = bars[bars.index > self.last_bar]
         for ts, row in bars.iterrows():
             out = self.kalman.update(row["log_y"], row["log_x"])
+            self.window_y.append(row["log_y"])
+            self.window_x.append(row["log_x"])
             self.last_bar, self.last_output = ts, out
             await self.on_bar(ts, row, out, now)
 
@@ -115,6 +125,18 @@ class PairsBot:
             self.blocked[why.split(":")[0]] += 1
             logger.info("Signal z={:+.2f} at {} blocked: {}", z, ts, why)
             return
+        if s.use_coint_gate:
+            if len(self.window_y) < s.coint_window:
+                self.blocked["cointegration window filling"] += 1
+                return
+            check = stationarity_gate(np.fromiter(self.window_y, float),
+                                      np.fromiter(self.window_x, float),
+                                      s.coint_max_pvalue, s.coint_max_half_life)
+            self.coint_checks.append((ts, check.passed, check.pvalue, check.half_life))
+            if not check.passed:
+                self.blocked["cointegration"] += 1
+                logger.info("Signal z={:+.2f} at {} blocked: {}", z, ts, check.reason)
+                return
         ticks = await self.feed.ticks()
         mids = mids_from_ticks(ticks)
         infos = {sym: await self.broker.symbol_info(self.cfg.broker_symbol(sym))

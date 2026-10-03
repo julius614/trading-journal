@@ -1,7 +1,9 @@
 """Replay two H1 CSVs through the live PairsBot on a PaperBroker.
 
-    python -m bots.statarb_3leg.backtest EURUSD=data/amd_fx/EURUSD_H1.csv \
-        GBPUSD=data/amd_fx/GBPUSD_H1.csv --commission 7 --out baskets.csv
+    python -m bots.statarb_3leg.backtest AUDUSD=data/amd_fx/AUDUSD_H1.csv \
+        NZDUSD=data/amd_fx/NZDUSD_H1.csv --commission 7 --out baskets.csv
+
+The first SYMBOL=CSV is the y leg, the second the x leg.
 
 Spreads: taken per bar from the CSV's MT5 `spread` column when present, else --spreads.
 Besides P&L, it reports how big spread swings are compared with 2-leg costs, why signals
@@ -17,7 +19,7 @@ from typing import Dict, List, Mapping, Optional
 import numpy as np
 import pandas as pd
 
-from .config import AppConfig, load_config
+from .config import DEFAULT_SPREADS, AppConfig, load_config
 from .data_fetcher import load_pair
 from .execution import Basket, PaperBroker
 from .main import PairsBot, load_news, setup_logging
@@ -62,7 +64,7 @@ async def run_replay(
     commission = cfg.filters.commission_per_lot if commission_per_lot is None else commission_per_lot
     cfg = dataclasses.replace(cfg, filters=dataclasses.replace(cfg.filters,
                                                                commission_per_lot=commission))
-    spreads = dict(spread_pips or {cfg.y: 0.2, cfg.x: 0.5})
+    spreads = dict(spread_pips or {s: DEFAULT_SPREADS.get(s, 0.5) for s in cfg.pair})
     broker = PaperBroker(balance, cfg.risk.account_currency, spreads, commission,
                          cfg.strategy.timeframe)
     for s in cfg.pair:
@@ -98,7 +100,11 @@ async def run_replay(
         print("\n== Signals (|Z| > entry) ==")
         print(f"  signals that reached the fee gate: {len(gates)}")
         if bot.blocked:
-            print(f"  blocked before the gate: {dict(bot.blocked)}")
+            print(f"  blocked before the fee gate: {dict(bot.blocked)}")
+        if bot.coint_checks:
+            cc = pd.DataFrame(bot.coint_checks, columns=["time", "passed", "pvalue", "half_life"])
+            print(f"  stationarity gate: {int(cc.passed.sum())}/{len(cc)} passed; median ADF p "
+                  f"{cc.pvalue.median():.3f}, median half-life {cc.half_life.median():.0f} bars")
         if len(gates):
             print(f"  passed the gate: {int(gates.passed.sum())}")
             print(f"  median edge {gates.expected_pips.median():.1f} pips vs median cost "
@@ -115,6 +121,7 @@ async def run_replay(
         pd.DataFrame([{**dataclasses.asdict(b), "legs": len(b.legs)} for b in bot.executor.history]
                      ).to_csv(out, index=False)
     return {"stats": stats, "baskets": bot.executor.history, "gates": gates,
+            "coint_checks": bot.coint_checks,
             "spread_pips": swings, "betas": betas, "broker": broker, "bot": bot}
 
 
@@ -123,16 +130,33 @@ def main(argv: Optional[List[str]] = None) -> None:
     p.add_argument("data", nargs=2, metavar="SYMBOL=CSV")
     p.add_argument("--balance", type=float, default=10_000.0)
     p.add_argument("--commission", type=float, help="per lot per leg, round trip")
-    p.add_argument("--spreads", default="EURUSD=0.2,GBPUSD=0.5",
-                   help="fallback spreads in pips when the CSV has no spread column")
+    p.add_argument("--spreads", help="fallback spreads in pips when the CSV has no spread "
+                   "column, e.g. AUDUSD=0.3,NZDUSD=0.7 (defaults: typical raw-account spreads)")
+    p.add_argument("--max-hold", type=int, help="time stop in bars (default 48)")
+    p.add_argument("--no-coint-gate", action="store_true", help="disable the ADF/half-life gate")
     p.add_argument("--out", help="write closed baskets to CSV")
     p.add_argument("--log-level", default="WARNING")
     a = p.parse_args(argv)
-    cfg = load_config()
+    paths = dict(x.split("=", 1) for x in a.data)
+    cfg = with_overrides(load_config(), tuple(paths), a.max_hold, a.no_coint_gate)
     setup_logging(cfg.log_dir, a.log_level)
-    spreads = {k: float(v) for k, v in (x.split("=") for x in a.spreads.split(","))}
-    asyncio.run(run_replay(cfg, dict(x.split("=", 1) for x in a.data), a.balance, spreads,
-                           a.commission, load_news(cfg, live=False), out=a.out))
+    spreads = ({k: float(v) for k, v in (x.split("=") for x in a.spreads.split(","))}
+               if a.spreads else None)
+    asyncio.run(run_replay(cfg, paths, a.balance, spreads, a.commission,
+                           load_news(cfg, live=False), out=a.out))
+
+
+def with_overrides(cfg: AppConfig, pair: tuple, max_hold: Optional[int] = None,
+                   no_coint_gate: bool = False) -> AppConfig:
+    """Set the pair from the command line (y first) and optional strategy overrides."""
+    strat = cfg.strategy
+    if max_hold is not None:
+        strat = dataclasses.replace(strat, max_hold_bars=max_hold)
+    if no_coint_gate:
+        strat = dataclasses.replace(strat, use_coint_gate=False)
+    suffix = next((v[len(k):] for k, v in cfg.symbol_map.items()), "")
+    return dataclasses.replace(cfg, pair=pair, strategy=strat,
+                               symbol_map={s: s + suffix for s in pair} if suffix else {})
 
 
 if __name__ == "__main__":

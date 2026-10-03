@@ -53,6 +53,39 @@ over 6 years).
    breaking).
 3. **Other pairs** with tighter fundamentals: AUDUSD/NZDUSD (`STATARB_PAIR=AUDUSD,NZDUSD`).
 
+## 5. Version 2 (2026-10-03): 48-bar time stop + rolling cointegration gate
+New rules:
+- **Time stop:** 48 H1 bars (was 240).
+- **Entry gate:** no entries unless an Engle–Granger test over the last 250 bars gives
+  p < 0.05 and the residual half-life is < 48 bars.
+- **Default pair:** now AUDUSD/NZDUSD.
+
+**Ablation sweep, OANDA EURUSD/GBPUSD H1 2014-01 → 2020-05, raw costs**
+(`python -m bots.statarb_3leg.sweep …`)
+
+| Variant | Trades | P&L | Win | Avg win / loss | PF | Max DD | Years + |
+|---|---|---|---|---|---|---|---|
+| Old: 240-bar stop, no gate | 81 | −$330 | 63% | +49 / −95 | 0.88 | −10.8% | 3/7 |
+| **48-bar stop only** | **125** | **+$363** | 54% | +45 / **−47** | **1.14** | **−4.3%** | **5/7** |
+| Gate only (240-bar stop) | 7 | −$130 | 57% | +47 / −106 | 0.59 | −2.5% | 3/6 |
+| New: 48-bar stop + gate | 7 | +$72 | 57% | +37 / −26 | 1.94 | −0.4% | 4/6 |
+
+**What it shows**
+- **The 48-bar stop does what it was meant to:** average loss halves (−$95 → −$47),
+  drawdown falls from −10.8% to −4.3%, and the result flips from −3.3% to +3.6%. But 104 of
+  125 trades exit on the time stop, not by full reversion, so the edge is "partial
+  reversion within 2 days".
+- **The gate blocks almost everything on EUR/GBP:** 7 of 1,733 checks passed (median p 0.87).
+  Over 250 H1 bars, EURUSD and GBPUSD are almost never cointegrated by Engle–Granger. Seven
+  trades in 6 years can't be evaluated.
+- **The gate is also weak on genuinely reverting data:** on a synthetic pair with a 15-bar
+  half-life it passes only ~17% of windows. 250 bars give the test little power, so p < 0.05
+  is a very strict bar.
+- **In-sample caveat:** the 48-bar rule was chosen after seeing this data's 10-day-stop
+  losses, so the +3.6% is not out-of-sample. Confirm on the broker's 2021–2026 H1 data
+  and on AUDUSD/NZDUSD, which isn't in the public dataset (no NZDUSD), using the sweep
+  on broker downloads.
+
 ## Self-check questions
 1. Why is a positive win rate (63%) still a losing strategy here?
 2. Why can a "reverted" exit lose money with a Kalman fair value?

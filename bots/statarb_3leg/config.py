@@ -1,4 +1,5 @@
-"""Configuration for the 2-leg H1 pairs-trading bot (default EURUSD vs GBPUSD).
+"""Configuration for the 2-leg H1 pairs-trading bot (default AUDUSD vs NZDUSD;
+EURUSD vs GBPUSD via STATARB_PAIR).
 
 (The package is still called statarb_3leg for continuity; the 3-leg triangle version is
 in git history at commit e5b753f.)
@@ -16,7 +17,10 @@ from typing import Dict, Optional, Tuple
 
 from ..amd_fx.config import BrokerConfig as _MT5Settings
 
-DEFAULT_PAIR: Tuple[str, str] = ("EURUSD", "GBPUSD")   # (y, x): y = beta * x + alpha
+DEFAULT_PAIR: Tuple[str, str] = ("AUDUSD", "NZDUSD")   # (y, x): y = beta * x + alpha
+PAIRS: Dict[str, Tuple[str, str]] = {"AUDNZD": ("AUDUSD", "NZDUSD"), "EURGBP": ("EURUSD", "GBPUSD")}
+# typical raw-account spreads in pips, used when data has no spread column
+DEFAULT_SPREADS: Dict[str, float] = {"AUDUSD": 0.3, "NZDUSD": 0.7, "EURUSD": 0.2, "GBPUSD": 0.5}
 CONTRACT_SIZE = 100_000
 PIP = 0.0001   # 4-decimal pairs only (no JPY quotes)
 
@@ -30,13 +34,18 @@ class StrategyConfig:
     entry_z: float = 2.0                   # |Z| beyond this -> candidate signal
     exit_z: float = 0.1                    # close when Z is back within +-exit_z of zero
     stop_z_extra: Optional[float] = 2.0    # stop if Z widens this far past the entry Z
-    max_hold_bars: Optional[int] = 240     # emergency exit after ~10 trading days of H1 bars
+    max_hold_bars: Optional[int] = 48      # exit if not reverted within 48 H1 bars (~2 days)
     q_beta: float = 1e-4                   # hedge-ratio drift variance / observation variance
     q_alpha: float = 1e-4                  # intercept drift variance / observation variance (~100-bar memory)
     r_halflife_bars: int = 500             # half-life of the adaptive noise estimate
     clip_sigma: Optional[float] = 4.0      # cap outliers when updating the noise estimate
     warmup_bars: int = 500                 # bars fed to the filter before any trading
     history_bars: int = 1500               # bars pulled at start-up for warm-up
+    # rolling stationarity gate on the static-hedge spread y - beta*x
+    use_coint_gate: bool = True
+    coint_window: int = 250                # bars tested
+    coint_max_pvalue: float = 0.05         # ADF p-value must be below this
+    coint_max_half_life: float = 48.0      # bars; expected reversion must be faster
 
 
 @dataclass(frozen=True)
@@ -45,7 +54,7 @@ class FilterConfig:
     commission_per_lot: float = 7.0        # round trip per 1.0 lot per leg, account ccy
     max_leg_spread_pips: float = 3.0       # reject if either leg's live spread is wider
     news_buffer_minutes: int = 15
-    news_currencies: Tuple[str, ...] = ("USD", "EUR", "GBP")
+    news_currencies: Tuple[str, ...] = ("USD", "AUD", "NZD", "EUR", "GBP")
     news_impacts: Tuple[str, ...] = ("high",)
     # Rollover (17:00 New York) moves between 22:00 UTC (winter) and 21:00 UTC (US summer
     # time). "ny_close" pauses entries 16:50-17:15 New York time all year (= 21:50-22:15

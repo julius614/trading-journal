@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 from datetime import datetime, time, timedelta, timezone
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -14,7 +15,7 @@ from bots.statarb_3leg.risk_manager import NewsCalendar, NewsEvent, RiskManager
 from bots.statarb_3leg.tests.conftest import make_pair
 
 RAW = {"EURUSD": 0.2, "GBPUSD": 0.5}
-CFG = AppConfig(strategy=StrategyConfig(warmup_bars=300))
+CFG = AppConfig(strategy=StrategyConfig(warmup_bars=300), pair=("EURUSD", "GBPUSD"))
 HOUR = timedelta(hours=1)
 
 
@@ -138,7 +139,9 @@ def test_exit_rules_with_entry_relative_stop():
     big = Basket("z", -1, "", 6.0, 90.0, 1.5)
     assert bot._exit_reason(big, 5.0) is None                    # reverting, not failing
     assert bot._exit_reason(big, 8.5) == "stop z"
-    long_b.bars_held = 240
+    long_b.bars_held = 47
+    assert bot._exit_reason(long_b, -1.0) is None
+    long_b.bars_held = 48                                        # 48 H1 bars ~ 2 days
     assert bot._exit_reason(long_b, -1.0) == "max hold"
 
 
@@ -189,3 +192,32 @@ def test_mt5_csv_spread_column_converted(tmp_path):
     df = load_leg_csv(p)
     assert df["spread_pips"].iat[0] == pytest.approx(0.7)
     assert df.index[0] == pd.Timestamp("2024-03-05 08:00", tz="UTC")
+
+
+def test_default_config_is_audusd_nzdusd_with_48_bar_stop():
+    cfg = AppConfig()
+    assert cfg.pair == ("AUDUSD", "NZDUSD")
+    assert cfg.strategy.max_hold_bars == 48 and cfg.strategy.use_coint_gate
+    assert cfg.strategy.coint_window == 250 and cfg.strategy.coint_max_half_life == 48
+    assert {"AUD", "NZD", "USD"} <= set(cfg.filters.news_currencies)
+
+
+def test_gate_blocks_a_drifting_relationship():
+    # add a random walk to the y leg: the relationship drifts and stops being cointegrated
+    drifting = make_pair(seed=11)
+    rng = np.random.default_rng(12)
+    walk = np.exp(np.cumsum(rng.normal(0, 0.0015, len(drifting["EURUSD"]))))
+    for col in ("open", "high", "low", "close"):
+        drifting["EURUSD"][col] = drifting["EURUSD"][col] * walk
+    res = replay(drifting)
+    gated_off = replay(drifting, cfg=dataclasses.replace(
+        CFG, strategy=dataclasses.replace(CFG.strategy, use_coint_gate=False)))
+    assert res["bot"].blocked["cointegration"] > 0
+    assert len(res["baskets"]) < len(gated_off["baskets"]) / 2
+
+
+def test_gate_lets_a_mean_reverting_pair_trade(pair):
+    res = replay(pair)
+    checks = pd.DataFrame(res["coint_checks"], columns=["t", "passed", "p", "hl"])
+    assert checks.passed.mean() > 0.6
+    assert (checks.loc[checks.passed, "hl"] < 48).all()
