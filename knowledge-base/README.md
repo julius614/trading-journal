@@ -18,6 +18,7 @@ its source, how it was captured, and the key takeaways I can apply in my trading
 |---|---|---|---|
 | 15-min ORB "the MAX way" | Max Options Trading (YouTube) | [strategies/orb-15min-max/README.md](strategies/orb-15min-max/README.md) | [strategies/orb_15min/](../strategies/orb_15min/) |
 | AMD session liquidity sweep (FX bot) | User spec (ICT-style AMD) | [strategies/amd-session-sweep/README.md](strategies/amd-session-sweep/README.md) | [bots/amd_fx/](../bots/amd_fx/) |
+| Triangular stat-arb (EURUSD/GBPUSD/EURGBP) | User spec | [strategies/statarb-triangle/README.md](strategies/statarb-triangle/README.md) | [bots/statarb_3leg/](../bots/statarb_3leg/) |
 
 ## Conventions
 

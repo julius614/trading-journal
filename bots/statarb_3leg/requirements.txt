@@ -1,0 +1,7 @@
+numpy>=1.24
+pandas>=2.0          # on Windows with Smart App Control, use pandas==2.2.3
+pytest>=7.0
+loguru>=0.7
+python-dotenv>=1.0
+# Live trading only (Windows + MetaTrader 5 terminal):
+MetaTrader5>=5.0.45; platform_system == "Windows"

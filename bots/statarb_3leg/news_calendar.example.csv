@@ -1,0 +1,5 @@
+datetime_utc,currency,impact,title
+2026-10-06T08:00:00Z,EUR,high,Example: ECB speech
+2026-10-07T12:30:00Z,USD,high,Example: CPI m/m
+2026-10-08T06:00:00Z,GBP,high,Example: GDP m/m
+2026-10-09T12:30:00Z,USD,high,Example: Non-Farm Payrolls
