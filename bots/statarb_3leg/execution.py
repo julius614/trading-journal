@@ -311,6 +311,12 @@ class MultiLegExecutor:
                 await self._rollback(filled)
                 return None
             filled.append(Leg(plan.symbol, plan.side, plan.lots, res.ticket, res.price))
+            sl_pips = self.cfg.risk.emergency_sl_pips
+            if sl_pips:
+                sl = res.price - plan.side * sl_pips * PIP
+                if not await self.broker.modify_sl(res.ticket, sl, 0.0):
+                    logger.warning("{} {}: emergency stop not set (ticket {}) - the bot still "
+                                   "manages exits", basket_id, plan.symbol, res.ticket)
         self.basket = Basket(basket_id, direction, now.isoformat(), z,
                              gate.expected_reversion_pips, gate.total_cost_pips, filled, beta)
         self._save()
@@ -326,6 +332,17 @@ class MultiLegExecutor:
             return 0.0
         tickets = {leg.ticket for leg in self.basket.legs if not leg.closed}
         return sum(p.profit for p in await self.broker.positions() if p.ticket in tickets)
+
+    async def broken_leg(self) -> Optional[str]:
+        """Symbol of an open-basket leg that is no longer open at the broker (its emergency
+        stop hit, or someone closed it by hand), else None. The other leg is then unhedged."""
+        if self.basket is None:
+            return None
+        live = {p.ticket for p in await self.broker.positions()}
+        for leg in self.basket.legs:
+            if not leg.closed and leg.ticket not in live:
+                return leg.symbol
+        return None
 
     async def close_basket(self, reason: str, now: datetime, z: float = float("nan")) -> Optional[Basket]:
         """Close every open leg. Returns the closed basket, or None if a leg is stuck."""

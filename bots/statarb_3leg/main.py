@@ -31,7 +31,7 @@ from .data_fetcher import PairFeed
 from .execution import Basket, Broker, BrokerError, MT5Broker, MultiLegExecutor
 from .fee_gate import evaluate, mids_from_ticks
 from .kalman_statarb import HedgeOutput, KalmanHedgeRatio, spread_pips
-from .risk_manager import NewsCalendar, RiskManager, balance_legs
+from .risk_manager import NewsCalendar, RiskManager, balance_legs, weekend_phase
 
 
 @dataclass(frozen=True)
@@ -91,6 +91,13 @@ class PairsBot:
         self.risk.update_day(now, equity)
         if self.risk.check_breaker(equity) and self.executor.basket is not None:
             await self.executor.close_basket("prop shield", now)
+        broken = await self.executor.broken_leg()
+        if broken is not None:
+            logger.error("{} leg is no longer open (emergency stop or manual close) - closing "
+                         "the other leg", broken)
+            await self.executor.close_basket("leg closed outside bot", now)
+        if weekend_phase(now, self.cfg.strategy) == "close" and self.executor.basket is not None:
+            await self.executor.close_basket("weekend", now)
         # keep feeding the filter even while locked; entries are blocked in entry_block()
         bars = await self.feed.closed_bars(count=50)
         if self.last_bar is not None:
@@ -114,6 +121,9 @@ class PairsBot:
         if b is not None:
             b.bars_held += 1
             reason = self._exit_reason(b, z)
+            if reason in ("reverted", "max hold") and self._news_exit_hold(now):
+                logger.info("Exit '{}' deferred: inside the news window", reason)
+                return
             if reason:
                 await self.executor.close_basket(reason, now, z)
             return
@@ -121,6 +131,8 @@ class PairsBot:
             return
         direction = 1 if z < 0 else -1          # Z < -2: y cheap vs x -> long spread
         blocked, why = self.risk.entry_block(now)
+        if not blocked and weekend_phase(now, s) is not None:
+            blocked, why = True, "weekend: flat before the weekend"
         if blocked:
             self.blocked[why.split(":")[0]] += 1
             logger.info("Signal z={:+.2f} at {} blocked: {}", z, ts, why)
@@ -142,7 +154,10 @@ class PairsBot:
         infos = {sym: await self.broker.symbol_info(self.cfg.broker_symbol(sym))
                  for sym in self.cfg.pair}
         equity = await self.broker.account_equity()
-        plans = balance_legs(direction, equity, mids, infos, self.cfg.risk, y, x, out.beta)
+        stop_move = (s.stop_z_extra * out.std if s.stop_z_extra is not None
+                     else 2.0 * out.std)   # fixed-risk sizing without a Z stop: assume 2 sigma
+        plans = balance_legs(direction, equity, mids, infos, self.cfg.risk, y, x, out.beta,
+                             stop_move)
         lots = {p.symbol: p.lots for p in plans} or None
         gate = evaluate(out.spread, ticks, self.cfg.filters, y, x, out.beta,
                         self.cfg.risk.account_currency, lots)
@@ -158,6 +173,10 @@ class PairsBot:
                         gate.total_cost_pips)
             return
         await self.executor.open_basket(plans, direction, z, gate, now, out.beta)
+
+    def _news_exit_hold(self, now: datetime) -> bool:
+        buf = self.cfg.filters.news_exit_buffer_minutes
+        return buf is not None and self.risk.news.blackout(now, self.cfg.filters, buf) is not None
 
     def _exit_reason(self, b: Basket, z: float) -> Optional[str]:
         s = self.cfg.strategy

@@ -49,6 +49,23 @@ def basket_stats(baskets: List[Basket], start_balance: float) -> Dict[str, float
     }
 
 
+def emergency_stop_hits(baskets: List[Basket], data: Mapping[str, pd.DataFrame],
+                        sl_pips: float) -> int:
+    """How many legs' bar highs/lows went sl_pips against the entry price while open."""
+    from .config import PIP
+    hits = 0
+    for b in baskets:
+        t0, t1 = pd.Timestamp(b.opened_at), pd.Timestamp(b.closed_at)
+        for leg in b.legs:
+            bars = data[leg.symbol].loc[t0:t1]
+            if bars.empty:
+                continue
+            worst = (leg.price - bars["low"].min() if leg.side == 1
+                     else bars["high"].max() - leg.price)
+            hits += int(worst >= sl_pips * PIP)
+    return hits
+
+
 async def run_replay(
     cfg: AppConfig,
     csv_paths: Mapping[str, str],
@@ -117,6 +134,11 @@ async def run_replay(
             for b in bot.executor.history:
                 by_year[b.opened_at[:4]] += b.pnl
             print(f"  P&L by year: {by_year.round(2).to_dict()}")
+            sl = cfg.risk.emergency_sl_pips
+            if sl:
+                hits = emergency_stop_hits(bot.executor.history, data, sl)
+                print(f"  legs that moved >= {sl:g} pips against the bot while open (a live "
+                      f"emergency stop would have closed them): {hits}")
     if out:
         pd.DataFrame([{**dataclasses.asdict(b), "legs": len(b.legs)} for b in bot.executor.history]
                      ).to_csv(out, index=False)
@@ -134,11 +156,26 @@ def main(argv: Optional[List[str]] = None) -> None:
                    "column, e.g. AUDUSD=0.3,NZDUSD=0.7 (defaults: typical raw-account spreads)")
     p.add_argument("--max-hold", type=int, help="time stop in bars (default 48)")
     p.add_argument("--no-coint-gate", action="store_true", help="disable the ADF/half-life gate")
+    p.add_argument("--flat-weekend", action="store_true",
+                   help="close before Friday 16:00 New York, no entries from Friday 12:00")
+    p.add_argument("--notional-mult", type=float, help="y-leg notional / equity (default 1)")
+    p.add_argument("--risk-per-trade", type=float,
+                   help="fixed-risk sizing, e.g. 0.005 = lose ~0.5%% at the Z stop")
     p.add_argument("--out", help="write closed baskets to CSV")
     p.add_argument("--log-level", default="WARNING")
     a = p.parse_args(argv)
     paths = dict(x.split("=", 1) for x in a.data)
     cfg = with_overrides(load_config(), tuple(paths), a.max_hold, a.no_coint_gate)
+    if a.flat_weekend:
+        cfg = dataclasses.replace(cfg, strategy=dataclasses.replace(cfg.strategy,
+                                                                    flat_before_weekend=True))
+    if a.notional_mult is not None or a.risk_per_trade is not None:
+        risk = cfg.risk
+        if a.notional_mult is not None:
+            risk = dataclasses.replace(risk, notional_equity_mult=a.notional_mult)
+        if a.risk_per_trade is not None:
+            risk = dataclasses.replace(risk, risk_per_trade=a.risk_per_trade)
+        cfg = dataclasses.replace(cfg, risk=risk)
     setup_logging(cfg.log_dir, a.log_level)
     spreads = ({k: float(v) for k, v in (x.split("=") for x in a.spreads.split(","))}
                if a.spreads else None)

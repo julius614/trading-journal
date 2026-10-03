@@ -21,6 +21,14 @@ the hedge, then close when the gap closes.
 >   lost $290 in the hold-out. The default was positive in all three periods, but the hold-out
 >   was thin (+$49). Details in section 7 of the strategy note.
 >
+> - **Prop-firm workarounds** (section 8 of the strategy note, and
+>   `knowledge-base/strategies/pairs-eurusd-gbpusd/prop-firm-plan.md`):
+>   - Adding more pairs failed the pre-declared test; only AUD/NZD qualifies.
+>   - Safe size is about 2×, which means roughly a 2% chance of reaching +10% within
+>     12 months.
+>   - Closing before the weekend removes about 70% of the profit.
+>   - So it's a slow, no-time-limit FTMO (Swing) attempt at best.
+>
 > Promising, not proven: about 1% a year at 1× notional, roughly 1.8 standard errors from
 > zero. Demo-trade before risking money. See
 > `knowledge-base/strategies/pairs-eurusd-gbpusd/README.md`. Education, not financial advice.
@@ -39,7 +47,8 @@ the hedge, then close when the gap closes.
 | `backtest.py` | Replay two CSVs (first = y leg); P&L, swings vs costs, gate stats, β path, P&L by year; `--max-hold`, `--no-coint-gate` |
 | `sweep.py` | One-command ablation: old rules vs 48-bar stop vs gate vs both, same data and costs |
 | `tune.py` | Pre-declared grid (entry Z × time stop) with tune/validate/hold-out split and a fixed selection rule |
-| `tests/` | 50 tests: Kalman, cointegration, fee gate, position balancer, signals/end-to-end |
+| `portfolio.py` | Pre-declared multi-pair test (6 USD pairs) and a prop-challenge pass-probability simulator |
+| `tests/` | 73 tests: Kalman, cointegration, fee gate, position balancer, signals/end-to-end, tuning, portfolio, prop rules |
 
 ## The model
 - **Prices:** y = ln(EURUSD), x = ln(GBPUSD).
@@ -94,7 +103,7 @@ and tested on unseen data.
 ## Setup and run (from the repo root)
 ```powershell
 pip install -r bots/statarb_3leg/requirements.txt
-pytest -q bots/statarb_3leg/tests            # 50 passed
+pytest -q bots/statarb_3leg/tests            # 73 passed
 ```
 
 ### 1. Download H1 history (MT5 open)
@@ -107,6 +116,8 @@ python -m bots.amd_fx.download_history --symbols AUDUSD NZDUSD --timeframe H1 --
 ```powershell
 python -m bots.statarb_3leg.sweep AUDUSD=data/amd_fx/AUDUSD_H1.csv NZDUSD=data/amd_fx/NZDUSD_H1.csv --commission 7
 python -m bots.statarb_3leg.backtest AUDUSD=data/amd_fx/AUDUSD_H1.csv NZDUSD=data/amd_fx/NZDUSD_H1.csv --commission 7 --out baskets.csv
+# prop-firm variants: --flat-weekend, --notional-mult 2, --risk-per-trade 0.005
+python -m bots.statarb_3leg.portfolio --data-dir data/amd_fx       # all 6 pairs + challenge odds
 ```
 
 ### 3. Live on a demo account (only if the backtest justifies it)
@@ -114,5 +125,19 @@ python -m bots.statarb_3leg.backtest AUDUSD=data/amd_fx/AUDUSD_H1.csv NZDUSD=dat
 2. Create a current news calendar CSV (format: `news_calendar.example.csv`).
 3. `python -m bots.statarb_3leg.main --live`
 
-The legs have no broker-side stops. If the bot is stopped, an open basket is unmanaged until
-restart (it's recovered from the state file).
+Each leg gets a wide **emergency stop** at the broker (250 pips; `STATARB_EMERGENCY_SL_PIPS`)
+in case the PC or connection dies. If one leg disappears (its stop fired, or it was closed by
+hand), the bot closes the other leg straight away. Everything else is managed by the bot.
+An open basket is recovered from the state file after a restart.
+
+### Prop-firm settings (`.env`)
+| Variable | Default | Meaning |
+|---|---|---|
+| `STATARB_NOTIONAL_MULT` | 1.0 | Size. About 2.0 is the safe maximum for a 10% max-loss account |
+| `STATARB_RISK_PER_TRADE` | off | Fixed-risk sizing instead (e.g. 0.005 = lose ~0.5% at the Z stop). Not backtested as a default |
+| `STATARB_EMERGENCY_SL_PIPS` | 250 | Broker-side stop per leg; `off` to disable |
+| `STATARB_FLAT_WEEKEND` | 0 | 1 = no entries from Friday 12:00 NY, close at 16:00 NY (costs ~70% of profit) |
+| `STATARB_NEWS_EXIT_BUFFER_MIN` | off | e.g. 2 for FTMO funded: normal exits wait out the news window |
+
+To trade a second pair, run a second copy with its own `STATARB_PAIR` and `STATARB_MAGIC`.
+Both share the account's Prop Shield, but only AUD/NZD has passed testing so far.

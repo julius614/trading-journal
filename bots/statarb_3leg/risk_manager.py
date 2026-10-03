@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import math
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
@@ -14,7 +14,7 @@ from loguru import logger
 
 from ..amd_fx.execution import SymbolInfo
 from ..amd_fx.risk_manager import in_time_window
-from .config import CONTRACT_SIZE, FilterConfig, RiskConfig
+from .config import CONTRACT_SIZE, FilterConfig, RiskConfig, StrategyConfig
 from .fee_gate import base_ccy, convert, quote_ccy
 
 NEW_YORK = ZoneInfo("America/New_York")
@@ -43,12 +43,18 @@ def balance_legs(
     y: str,
     x: str,
     beta: float,
+    stop_move: Optional[float] = None,
 ) -> List[LegPlan]:
     """Lot sizes for a beta-weighted pair book.
 
     Long spread (direction +1) = BUY y, SELL beta x of x (BUY x if beta < 0); short spread is
     the mirror. The y-leg notional is notional_equity_mult x equity; the x-leg notional is
     |beta| x that (both valued in USD), so P&L tracks the spread y - beta x.
+
+    Fixed-risk mode (risk.risk_per_trade set, stop_move = distance from entry to the Z stop
+    in log-spread units, i.e. stop_z_extra x spread std): the y-leg notional is
+    risk_per_trade x equity / stop_move, so reaching the stop loses about risk_per_trade
+    of equity (before costs and gaps), capped at max_notional_mult x equity.
     Returns [] if either leg rounds below its minimum lot.
     """
     if direction not in (1, -1):
@@ -57,8 +63,12 @@ def balance_legs(
         raise ValueError("equity must be positive")
     if not math.isfinite(beta) or beta == 0:
         raise ValueError("hedge ratio must be finite and non-zero")
-    notional = convert(equity * risk.notional_equity_mult, risk.account_currency,
-                       quote_ccy(y), mids)
+    mult = risk.notional_equity_mult
+    if risk.risk_per_trade is not None:
+        if stop_move is None or not math.isfinite(stop_move) or stop_move <= 0:
+            raise ValueError("fixed-risk sizing needs a positive stop distance")
+        mult = min(risk.risk_per_trade / stop_move, risk.max_notional_mult)
+    notional = convert(equity * mult, risk.account_currency, quote_ccy(y), mids)
     n_y = min(_floor_step(notional / (CONTRACT_SIZE * mids[y]), infos[y].volume_step),
               risk.max_lots_per_leg)
     if n_y < infos[y].volume_min:
@@ -122,9 +132,12 @@ class NewsCalendar:
     def last_event_time(self) -> Optional[datetime]:
         return self.events[-1].time if self.events else None
 
-    def blackout(self, now: datetime, cfg: FilterConfig) -> Optional[NewsEvent]:
-        """The event that puts `now` inside its +- buffer window, if any."""
-        buf = timedelta(minutes=cfg.news_buffer_minutes)
+    def blackout(self, now: datetime, cfg: FilterConfig,
+                 buffer_minutes: Optional[int] = None) -> Optional[NewsEvent]:
+        """The event that puts `now` inside its +- buffer window, if any (default buffer:
+        cfg.news_buffer_minutes)."""
+        buf = timedelta(minutes=cfg.news_buffer_minutes if buffer_minutes is None
+                        else buffer_minutes)
         for e in self.events:
             if e.time - buf > now:
                 break
@@ -132,6 +145,25 @@ class NewsCalendar:
                     and abs(e.time - now) <= buf):
                 return e
         return None
+
+
+# ---------------------------------------------------------------------- weekend rule
+
+def weekend_phase(now: datetime, strategy: StrategyConfig) -> Optional[str]:
+    """For accounts that must be flat over the weekend: "close" from Friday
+    weekend_close_ny until the market reopens (Sunday 17:00 New York), "no_entry" from
+    Friday weekend_no_entry_ny, else None. Always None when the rule is off."""
+    if not strategy.flat_before_weekend:
+        return None
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    ny = now.astimezone(NEW_YORK)
+    wd, t = ny.weekday(), ny.time()
+    if wd == 5 or (wd == 6 and t < time(17, 0)) or (wd == 4 and t >= strategy.weekend_close_ny):
+        return "close"
+    if wd == 4 and t >= strategy.weekend_no_entry_ny:
+        return "no_entry"
+    return None
 
 
 # ---------------------------------------------------------------------- risk manager

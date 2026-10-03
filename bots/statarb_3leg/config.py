@@ -48,6 +48,12 @@ class StrategyConfig:
     coint_window: int = 250                # bars tested
     coint_max_pvalue: float = 0.05         # ADF p-value must be below this
     coint_max_half_life: float = 48.0      # bars; expected reversion must be faster
+    # Funded prop accounts that forbid holding over the weekend: no new baskets from
+    # Friday weekend_no_entry_ny, and close any open basket at Friday weekend_close_ny
+    # (New York time, so it tracks US daylight saving like the 17:00 NY market close).
+    flat_before_weekend: bool = False
+    weekend_no_entry_ny: time = time(12, 0)
+    weekend_close_ny: time = time(16, 0)
 
 
 @dataclass(frozen=True)
@@ -58,6 +64,10 @@ class FilterConfig:
     news_buffer_minutes: int = 15
     news_currencies: Tuple[str, ...] = ("USD", "AUD", "NZD", "EUR", "GBP")
     news_impacts: Tuple[str, ...] = ("high",)
+    # Funded prop accounts that forbid opening OR closing around news (FTMO: 2 minutes):
+    # "reverted" and "max hold" exits wait until this many minutes after the event.
+    # Protective exits (Z stop, Prop Shield) are never delayed. None = off.
+    news_exit_buffer_minutes: Optional[int] = None
     # Rollover (17:00 New York) moves between 22:00 UTC (winter) and 21:00 UTC (US summer
     # time). "ny_close" pauses entries 16:50-17:15 New York time all year (= 21:50-22:15
     # UTC in winter, 20:50-21:15 UTC in summer); "utc" uses the fixed UTC times below.
@@ -72,6 +82,13 @@ class FilterConfig:
 class RiskConfig:
     account_currency: str = "USD"          # USD, or the base currency of one of the legs
     notional_equity_mult: float = 1.0      # y-leg notional = mult x equity
+    # Fixed-risk sizing (overrides notional_equity_mult when set): size the y leg so the
+    # loss at the Z stop is about this fraction of equity, e.g. 0.005 = 0.5%.
+    risk_per_trade: Optional[float] = None
+    max_notional_mult: float = 10.0        # cap on y-leg notional / equity in that mode
+    # Wide broker-side stop on every leg (live only), so a crashed PC or lost connection
+    # cannot run a leg into the prop firm's daily loss limit. Normal exits stay with the bot.
+    emergency_sl_pips: Optional[float] = 250.0
     max_lots_per_leg: float = 20.0
     daily_loss_limit: float = 0.02         # 2% of day-start equity, realized + floating
     day_reset: time = time(0, 0)
@@ -130,6 +147,14 @@ def _load_dotenv() -> None:
     load_dotenv()
 
 
+def _opt_float(name: str, default: str = "") -> Optional[float]:
+    """Float from the environment; empty, "0" or "off" means None (feature off)."""
+    raw = os.getenv(name, default).strip().lower()
+    if raw in ("", "off", "none", "0"):
+        return None
+    return float(raw)
+
+
 def load_config() -> AppConfig:
     """Build the config from defaults plus environment variables (and .env)."""
     _load_dotenv()
@@ -142,9 +167,18 @@ def load_config() -> AppConfig:
     risk = RiskConfig(
         account_currency=os.getenv("STATARB_ACCOUNT_CCY", "USD").upper(),
         notional_equity_mult=float(os.getenv("STATARB_NOTIONAL_MULT", "1.0")),
+        risk_per_trade=_opt_float("STATARB_RISK_PER_TRADE"),
+        emergency_sl_pips=_opt_float("STATARB_EMERGENCY_SL_PIPS", "250"),
     )
+    news_exit = _opt_float("STATARB_NEWS_EXIT_BUFFER_MIN")
     filters = FilterConfig(
         commission_per_lot=float(os.getenv("STATARB_COMMISSION_PER_LOT", "7.0")),
+        news_exit_buffer_minutes=int(news_exit) if news_exit is not None else None,
     )
-    return AppConfig(broker=broker, risk=risk, filters=filters, pair=pair,  # type: ignore[arg-type]
+    strategy = StrategyConfig(
+        flat_before_weekend=os.getenv("STATARB_FLAT_WEEKEND", "0").strip().lower() in
+        ("1", "true", "yes"),
+    )
+    return AppConfig(broker=broker, risk=risk, filters=filters, strategy=strategy,
+                     pair=pair,  # type: ignore[arg-type]
                      symbol_map=symbol_map, news_csv=os.getenv("STATARB_NEWS_CSV") or None)

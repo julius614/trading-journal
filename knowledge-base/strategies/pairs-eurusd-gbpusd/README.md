@@ -149,6 +149,79 @@ the default, so the rule **rejected it and kept the default (2.0, 48)**. Its hol
 - Entry Z 2.5 looks better recently but has very few trades (12–19) — too few to act on.
 - **No parameter change.** Next step: demo-trade the defaults and compare with the backtest.
 
+## 8. Prop-firm workarounds tested (2026-10-03)
+
+The problem: about +1%/yr at 1× notional, so a 10% challenge target takes years. Four fixes
+were tried. The protocols (`portfolio.py`, commit `158e813`) were committed before any of
+them ran on the data.
+
+### 8a. More pairs: failed
+Pre-declared rule: a pair joins only if, on 2018–22, it has at least 40 trades and PF ≥ 1.1,
+and it stays only if its 2023–24 PF is above 1.0. Figures are for $100k at 1×, using the
+defaults.
+
+| Pair | Tune P&L | Tune PF | Validate P&L | Validate PF | Hold-out P&L | Hold-out PF |
+|---|---|---|---|---|---|---|
+| EUR/GBP | −3,971 | 0.75 | +1,475 | 1.36 | −1,965 | 0.73 |
+| EUR/AUD | −9,036 | 0.60 | +2,042 | 1.51 | −1,006 | 0.86 |
+| EUR/NZD | −7,217 | 0.67 | +1,277 | 1.20 | −384 | 0.94 |
+| GBP/AUD | +2,752 | 1.10 | +6,036 | 2.70 | +668 | 1.10 |
+| GBP/NZD | −6,950 | 0.78 | +5,764 | 2.15 | +2,559 | 1.59 |
+| **AUD/NZD** | **+5,215** | **1.37** | **+2,567** | **1.90** | **+468** | **1.08** |
+
+- **Only AUD/NZD qualifies.** GBP/AUD missed PF 1.1 by 0.002 on the tune period, and the
+  rule is not bent after the fact.
+- Every pair did well in 2023–24, which shows why one good period proves nothing.
+- GBP/NZD and GBP/AUD may be worth a **new** pre-declared test on future data. They
+  can't be added now.
+
+### 8b. Bigger size: limited by drawdown, not by the daily limit
+Simulated challenge: 10,000 bootstrap paths, a target of +10%, failure at −10% overall or a
+−5% day, and no time limit.
+
+| Scale | Data | P(pass) | P(fail) | P(pass within 12 months) | Median time to pass |
+|---|---|---|---|---|---|
+| 2× | 2023–26 (out of sample) | 22% | 1% | 0.5% | 27 months |
+| 3.5× | 2023–26 (out of sample) | 55% | 10% | 11% | 19 months |
+| 2× | 2018–26 (all, in sample) | 38% | 7% | 2% | 24 months |
+| 2.5× | 2018–26 (all, in sample) | 52% | 11% | 7% | 21 months |
+| 3× | 2018–26 (all, in sample) | 57% | 29% | 14% | 18 months |
+
+- The pre-declared rule picks **3.5×** on 2023–26. But that period has no shock like
+  March 2020. Over the full history, max drawdown at 1× is −5.1% and the worst day is −1.9%,
+  so 3× already fails 29% of the time.
+- **Recommended: 2×** (`STATARB_NOTIONAL_MULT=2`). The two data sets are combined
+  conservatively.
+- **Bottom line: this bot cannot pass a 10% challenge quickly at a safe size.** At 2×, about
+  98 in 100 tries would not pass within 12 months. Most simply wouldn't finish yet; few
+  would fail.
+
+### 8c. Flat before the weekend: too expensive
+`--flat-weekend` blocks entries from Friday 12:00 NY and closes at 16:00 NY.
+
+| | Trades | P&L | PF | Win rate |
+|---|---|---|---|---|
+| Normal (2018–26) | 145 | +$8,251 | 1.37 | 57% |
+| Flat before weekend | 153 | +$2,570 | 1.12 | 48% |
+
+It removes about 70% of the profit, because Friday positions get closed before they
+revert. On a funded account, use the **FTMO Swing** account (weekend holding allowed), not
+this flag.
+
+### 8d. Emergency stop per leg
+- A live-only broker stop at 250 pips per leg. Legs moved that far 3 times in 8 years
+  (12 times at 150 pips, which is why the default is 250).
+- If a stop (or a manual close) removes one leg, the bot now closes the other leg at once
+  ("leg closed outside bot"), so the account isn't left with a one-sided position.
+
+### 8e. Other additions
+- **Fixed-risk sizing** (`STATARB_RISK_PER_TRADE`): sizes each trade so the Z stop loses
+  about that fraction of equity. It is **not** part of the tested results above.
+- **News exit buffer** (`STATARB_NEWS_EXIT_BUFFER_MIN=2`): normal exits wait out FTMO's
+  2-minute news window. The Z stop and the Prop Shield never wait.
+
+See [prop-firm-plan.md](prop-firm-plan.md) for what this means in practice.
+
 ## Self-check questions
 1. Why is a positive win rate (63%) still a losing strategy here?
 2. Why can a "reverted" exit lose money with a Kalman fair value?
