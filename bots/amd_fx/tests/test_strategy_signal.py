@@ -133,3 +133,11 @@ def test_zscore_measured_at_displacement_is_stricter(long_day):
     strat = AMDStrategy("EURUSD", disp_cfg)
     z_disp = strat._latest_z(long_day.loc[:"2024-03-05 07:40"]["close"])
     assert z_disp > sweep_sigs[0].zscore            # price has bounced: less extreme
+
+
+def test_tp2_extension_beyond_range(long_day):
+    import dataclasses
+    from bots.amd_fx.config import StrategyConfig
+    cfg = dataclasses.replace(NO_FILTERS, strategy=StrategyConfig(tp2_extension=0.5))
+    _, sigs = run(long_day, cfg=cfg)
+    assert sigs[0].tp2 == pytest.approx(1.1010 + 0.5 * 0.0020)   # half a range beyond

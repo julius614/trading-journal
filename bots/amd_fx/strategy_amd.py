@@ -281,11 +281,12 @@ class AMDStrategy:
             return None
 
         buf = cfg.sl_buffer_pips * self.pip
+        ext = cfg.tp2_extension * a.width
         if side == 1:
-            sl, tp1, tp2 = sw.extreme - buf, a.mid, a.high
+            sl, tp1, tp2 = sw.extreme - buf, a.mid, a.high + ext
             valid = tp1 > close
         else:
-            sl, tp1, tp2 = sw.extreme + buf, a.mid, a.low
+            sl, tp1, tp2 = sw.extreme + buf, a.mid, a.low - ext
             valid = tp1 < close
         st.sweep = None
         if not valid:

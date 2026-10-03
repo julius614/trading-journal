@@ -82,3 +82,18 @@ def test_daily_loss_breaker_blocks_later_signals():
     assert t.r_multiple == pytest.approx(-1.0, abs=0.05)
     assert res["stats"]["end_balance"] == pytest.approx(10_000 + t.pnl)
     assert res["stats"]["end_balance"] <= 10_000 * 0.98
+
+
+def test_single_leg_moves_to_breakeven_at_tp1():
+    import dataclasses
+    from bots.amd_fx.config import StrategyConfig
+    cfg = dataclasses.replace(CFG, strategy=StrategyConfig(tp1_fraction=0.0))
+    day = sweep_day("2024-03-05")
+    late = day.index >= pd.Timestamp("2024-03-05 07:55", tz="UTC")
+    day.loc[late, ["open", "high", "low", "close"]] = [1.0999, 1.1001, 1.0985, 1.0986]
+    data = pd.concat([filler_days("2024-02-01", 20), day])
+    res = replay({"EURUSD": data}, cfg=cfg)
+    t = res["trades"][0]
+    assert set(t.legs) == {"B"} and t.be_done
+    assert [d.reason for d in res["deals"]] == ["sl"]
+    assert t.r_multiple == pytest.approx(0.5 * 0.0001 / 0.00193, abs=0.01)   # +0.5 pip

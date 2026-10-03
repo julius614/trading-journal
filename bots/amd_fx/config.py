@@ -82,7 +82,8 @@ class StrategyConfig:
     max_range_atr_mult: float = 2.0       # skip the day if Asian range > mult * ATR
     sl_buffer_pips: float = 2.5
     be_offset_pips: float = 0.5
-    tp1_fraction: float = 0.5
+    tp1_fraction: float = 0.5             # 0 = one position to TP2 (BE once TP1 is reached)
+    tp2_extension: float = 0.0            # TP2 beyond the far boundary, x Asian range width
     trail_after_tp1: bool = False
     trail_pips: float = 10.0
     history_bars: int = 600               # bars pulled for filters and the Asian range

@@ -5,3 +5,4 @@ sample_5min.csv
 logs/
 data/amd_fx/
 .env
+bots/amd_fx/research/data/
