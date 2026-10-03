@@ -21,6 +21,7 @@ volatility-spike filter, plus "Prop Shield" risk rules.
 | `risk_manager.py` | 1% position sizing, 2% daily breaker, max 2 trades, rollover pause, spread check |
 | `execution.py` | `Broker` interface, `MT5Broker`, `PaperBroker`, `TradeManager` (two legs, break-even, trailing, state file) |
 | `backtest.py` | Replays CSV bars through the **same** `Bot` on the paper broker |
+| `download_history.py` | Downloads MT5 history to backtest-ready UTC CSVs |
 | `tests/` | 57 pytest tests, including a fake MetaTrader5 module for the adapter |
 
 ## Rules as implemented (all times UTC)
