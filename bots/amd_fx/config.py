@@ -35,19 +35,23 @@ class BrokerConfig:
     deviation_points: int = 20
     max_retries: int = 3
     retry_delay_seconds: float = 0.5
-    # Broker server time minus UTC, in hours. None = auto-detect from the latest tick.
-    server_utc_offset_hours: Optional[int] = None
+    # How broker server time maps to UTC:
+    #   "ny_close" - UTC+2, or UTC+3 while New York is on daylight saving (most FX brokers)
+    #   "3", "-5"  - a fixed offset in hours
+    #   "auto"     - detect from a live tick (refused at weekends, when ticks are stale)
+    server_timezone: str = "auto"
 
     @classmethod
     def from_env(cls) -> "BrokerConfig":
-        offset = os.getenv("MT5_SERVER_UTC_OFFSET")
+        tz = (os.getenv("MT5_SERVER_TIMEZONE") or os.getenv("MT5_SERVER_UTC_OFFSET")
+              or "auto").strip().lower()
         return cls(
             login=_env_int("MT5_LOGIN"),
             password=os.getenv("MT5_PASSWORD") or None,
             server=os.getenv("MT5_SERVER") or None,
             terminal_path=os.getenv("MT5_TERMINAL_PATH") or None,
             magic=_env_int("MT5_MAGIC") or 260_110,
-            server_utc_offset_hours=int(offset) if offset not in (None, "") else None,
+            server_timezone=tz,
         )
 
 

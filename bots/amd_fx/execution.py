@@ -16,10 +16,11 @@ import logging
 import math
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 
 from .config import AppConfig, BrokerConfig, pip_size
@@ -137,6 +138,45 @@ _RETRYABLE = {10004, 10020, 10021, 10024, 10031}   # requote, price changed, off
 _FILLING_UNSUPPORTED = 10030
 
 
+def validate_server_timezone(mode: str) -> str:
+    """Normalise a server-time setting: "auto", "ny_close", or whole hours -12..+14."""
+    mode = str(mode).strip().lower()
+    if mode in ("auto", "ny_close"):
+        return mode
+    try:
+        hours = int(mode)
+    except ValueError as exc:
+        raise ValueError(f"MT5 server timezone must be auto, ny_close or hours, got {mode!r}") from exc
+    if not -12 <= hours <= 14:
+        raise ValueError(f"MT5 server UTC offset out of range: {hours}")
+    return str(hours)
+
+
+def is_fx_weekend(now: datetime) -> bool:
+    """True from Friday 21:00 to Sunday 21:00 UTC, when FX ticks are stale."""
+    wd, h = now.weekday(), now.hour
+    return (wd == 4 and h >= 21) or wd == 5 or (wd == 6 and h < 21)
+
+
+def server_to_utc(index: pd.DatetimeIndex, mode: str) -> pd.DatetimeIndex:
+    """Convert naive broker-server timestamps to tz-aware UTC.
+
+    mode "ny_close": server time = New York time + 7 h, i.e. UTC+3 while New York is on
+    daylight saving and UTC+2 otherwise. Otherwise mode is a fixed offset in hours.
+    """
+    if index.tz is not None:
+        index = index.tz_localize(None)
+    if mode == "ny_close":
+        guess = (index - pd.Timedelta(hours=2)).tz_localize("UTC")
+        ny_offset = guess.tz_convert("America/New_York").tz_localize(None) - guess.tz_localize(None)
+        dst = np.asarray(ny_offset == pd.Timedelta(hours=-4))
+        shift = pd.to_timedelta(np.where(dst, 3, 2), unit="h")
+        return (index - shift).tz_localize("UTC")
+    if mode == "auto":
+        raise ValueError("resolve 'auto' to an offset before converting")
+    return (index - pd.Timedelta(hours=int(mode))).tz_localize("UTC")
+
+
 class MT5Broker(Broker):
     """MetaTrader 5 adapter (official `MetaTrader5` package; Windows with a terminal running).
 
@@ -147,10 +187,7 @@ class MT5Broker(Broker):
     def __init__(self, cfg: BrokerConfig) -> None:
         self.cfg = cfg
         self._mt5: Any = None
-        self._offset: Optional[timedelta] = (
-            timedelta(hours=cfg.server_utc_offset_hours)
-            if cfg.server_utc_offset_hours is not None else None
-        )
+        self._tz_mode = validate_server_timezone(cfg.server_timezone)
         self._lock = asyncio.Lock()   # the MT5 library is not thread-safe
 
     async def _call(self, fn_name: str, *args: Any, **kwargs: Any) -> Any:
@@ -221,20 +258,35 @@ class MT5Broker(Broker):
                           volume_min=float(i.volume_min), volume_max=float(i.volume_max),
                           volume_step=float(i.volume_step))
 
-    async def _server_offset(self, symbol: str) -> timedelta:
-        if self._offset is not None:
-            return self._offset
+    @property
+    def timezone_mode(self) -> str:
+        return self._tz_mode
+
+    def _now(self) -> datetime:
+        return datetime.now(timezone.utc)
+
+    async def _resolve_timezone(self, symbol: str) -> str:
+        """Return the server-time mode, detecting a fixed offset once if set to "auto"."""
+        if self._tz_mode != "auto":
+            return self._tz_mode
+        now = self._now()
+        if is_fx_weekend(now):
+            raise BrokerError(
+                "Can't auto-detect the broker's server time at the weekend (the last tick is "
+                "Friday's). Set MT5_SERVER_TIMEZONE, e.g. ny_close (most brokers) or 3.")
         tick = await self._call("symbol_info_tick", symbol)
         if tick is None:
             raise BrokerError(f"symbol_info_tick({symbol}) failed: {await self._last_error()}")
-        diff = tick.time - datetime.now(timezone.utc).timestamp()
+        diff = tick.time - now.timestamp()
         hours = round(diff / 3600)
-        if abs(diff - hours * 3600) > 600:
-            raise BrokerError("Could not detect the server UTC offset (stale tick - market "
-                              "closed?). Set MT5_SERVER_UTC_OFFSET.")
-        self._offset = timedelta(hours=hours)
-        log.info("Detected broker server time = UTC%+d", hours)
-        return self._offset
+        if abs(diff - hours * 3600) > 600 or not -12 <= hours <= 14:
+            raise BrokerError("Could not detect the broker's server time (stale tick?). "
+                              "Set MT5_SERVER_TIMEZONE, e.g. ny_close or 3.")
+        self._tz_mode = str(hours)
+        log.warning("Detected broker server time = UTC%+d. If your broker shifts between +2 "
+                    "and +3 with daylight saving, set MT5_SERVER_TIMEZONE=ny_close instead.",
+                    hours)
+        return self._tz_mode
 
     async def get_rates(self, symbol: str, timeframe: str, count: int) -> pd.DataFrame:
         await self._ensure_symbol(symbol)
@@ -244,9 +296,9 @@ class MT5Broker(Broker):
         if rates is None or len(rates) == 0:
             raise BrokerError(f"copy_rates_from_pos({symbol},{timeframe}) failed: "
                               f"{await self._last_error()}")
-        offset = await self._server_offset(symbol)
+        mode = await self._resolve_timezone(symbol)
         df = pd.DataFrame(rates)
-        df.index = pd.to_datetime(df["time"], unit="s", utc=True) - offset
+        df.index = server_to_utc(pd.DatetimeIndex(pd.to_datetime(df["time"], unit="s")), mode)
         df = df.rename(columns={"tick_volume": "volume"})
         return df[["open", "high", "low", "close", "volume", "spread"]].astype(float)
 
@@ -254,8 +306,9 @@ class MT5Broker(Broker):
         tick = await self._call("symbol_info_tick", symbol)
         if tick is None:
             raise BrokerError(f"symbol_info_tick({symbol}) failed: {await self._last_error()}")
-        offset = await self._server_offset(symbol)
-        t = datetime.fromtimestamp(tick.time, tz=timezone.utc) - offset
+        mode = await self._resolve_timezone(symbol)
+        server = pd.DatetimeIndex([pd.Timestamp(tick.time, unit="s")])
+        t = server_to_utc(server, mode)[0].to_pydatetime()
         return Tick(time=t, bid=float(tick.bid), ask=float(tick.ask))
 
     async def positions(self, symbol: Optional[str] = None) -> List[Position]:

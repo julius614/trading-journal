@@ -84,10 +84,24 @@ signal), so you can see where setups drop out.
 1. Install MT5, log in to a **demo** account, enable *Algo Trading*.
 2. Copy `.env.example` → `.env`, fill it in, and load it into the environment.
 3. `python -m bots.amd_fx.main --live`
-- Bar and tick times are converted from broker server time to UTC (auto-detected, or set
-  `MT5_SERVER_UTC_OFFSET`). Check the "Detected broker server time" log line.
+- Bar and tick times are converted from broker server time to UTC. **Set
+  `MT5_SERVER_TIMEZONE`**: `ny_close` for most brokers (UTC+2 in winter, +3 in summer), or
+  a fixed number of hours. To check, compare the server time in MT5's Market Watch with UTC.
+  `auto` works only on weekdays, because at weekends the last tick is stale.
 - Open trades are saved to `data/amd_fx/trades_state.json` and recovered on restart.
 - Stop with Ctrl+C; positions keep their broker-side SL/TP.
+
+### Downloading history from MT5
+```powershell
+$env:MT5_SERVER_TIMEZONE="ny_close"
+python -m bots.amd_fx.download_history --symbols EURUSD GBPUSD --timeframe M5 --bars 300000
+```
+The downloader refuses to save data with Saturday bars (a sign that the server-time
+setting is wrong). The last bar of a week should be Friday around 20:55 UTC.
+
+### Windows: "An Application Control policy has blocked this file"
+Smart App Control can block a brand-new pandas release. Install a well-known one:
+`pip install "pandas==2.2.3"`.
 
 ## Not done / limits
 - **No results on real market data yet** — the replay has only been run on synthetic data.

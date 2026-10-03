@@ -78,7 +78,7 @@ class FakeMT5:
 def broker(monkeypatch):
     fake = FakeMT5()
     monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
-    b = MT5Broker(BrokerConfig(retry_delay_seconds=0))
+    b = MT5Broker(BrokerConfig(retry_delay_seconds=0, server_timezone="3"))
     asyncio.run(b.connect())
     return b, fake
 
@@ -98,7 +98,7 @@ def test_rates_skip_forming_bar_and_convert_to_utc(broker):
 def test_offset_override_from_config(monkeypatch):
     fake = FakeMT5()
     monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
-    b = MT5Broker(BrokerConfig(server_utc_offset_hours=2))
+    b = MT5Broker(BrokerConfig(server_timezone="2"))
     run(b.connect())
     df = run(b.get_rates("EURUSD", "M5", 1))
     assert df.index[0] == pd.Timestamp("2024-03-05 08:00", tz="UTC")
@@ -155,3 +155,70 @@ def test_account_and_symbol_info(broker):
     assert run(b.account_equity()) == 10_000.0
     info = run(b.symbol_info("EURUSD"))
     assert info.tick_value == 1.0 and info.pip == 0.0001
+
+
+# ---------------------------------------------------------------- server time zone
+
+from datetime import datetime, timezone  # noqa: E402
+
+from bots.amd_fx.execution import (  # noqa: E402
+    BrokerError, is_fx_weekend, server_to_utc, validate_server_timezone,
+)
+
+
+def test_ny_close_follows_us_daylight_saving():
+    idx = pd.DatetimeIndex(["2026-07-01 10:00", "2026-01-15 10:00"])
+    out = server_to_utc(idx, "ny_close")
+    assert out[0] == pd.Timestamp("2026-07-01 07:00", tz="UTC")   # summer: UTC+3
+    assert out[1] == pd.Timestamp("2026-01-15 08:00", tz="UTC")   # winter: UTC+2
+
+
+def test_friday_close_lands_on_friday_utc():
+    out = server_to_utc(pd.DatetimeIndex(["2026-10-02 23:55"]), "ny_close")
+    assert out[0] == pd.Timestamp("2026-10-02 20:55", tz="UTC")
+
+
+def test_validate_server_timezone():
+    assert validate_server_timezone(" NY_CLOSE ") == "ny_close"
+    assert validate_server_timezone("+3") == "3"
+    for bad in ("utc+3", "15"):
+        with pytest.raises(ValueError):
+            validate_server_timezone(bad)
+
+
+def test_weekend_window():
+    assert is_fx_weekend(datetime(2026, 10, 3, 9, 50, tzinfo=timezone.utc))      # Saturday
+    assert is_fx_weekend(datetime(2026, 10, 2, 21, 30, tzinfo=timezone.utc))     # Fri night
+    assert not is_fx_weekend(datetime(2026, 10, 4, 21, 30, tzinfo=timezone.utc)) # Sun open
+    assert not is_fx_weekend(datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))  # Thursday
+
+
+def _auto_broker(monkeypatch, now):
+    fake = FakeMT5()
+    fake.tick = NS(time=int(now.timestamp()) + 3 * 3600, bid=1.1, ask=1.10008)
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
+    b = MT5Broker(BrokerConfig(server_timezone="auto"))
+    b._now = lambda: now
+    run(b.connect())
+    return b
+
+
+def test_auto_detects_offset_on_a_weekday(monkeypatch):
+    b = _auto_broker(monkeypatch, datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))
+    run(b.get_rates("EURUSD", "M5", 1))
+    assert b.timezone_mode == "3"
+
+
+def test_auto_refuses_at_the_weekend(monkeypatch):
+    b = _auto_broker(monkeypatch, datetime(2026, 10, 3, 9, 50, tzinfo=timezone.utc))
+    with pytest.raises(BrokerError, match="weekend"):
+        run(b.get_rates("EURUSD", "M5", 1))
+
+
+def test_downloader_rejects_saturday_bars():
+    from bots.amd_fx.download_history import check_utc_sanity
+    idx = pd.date_range("2026-10-02 20:50", periods=3, freq="5min", tz="UTC")
+    check_utc_sanity("EURUSD", pd.DataFrame({"close": 1.0}, index=idx))     # Friday: fine
+    sat = pd.DatetimeIndex([pd.Timestamp("2026-10-03 09:50", tz="UTC")])
+    with pytest.raises(SystemExit, match="Saturday"):
+        check_utc_sanity("EURUSD", pd.DataFrame({"close": 1.0}, index=sat))
