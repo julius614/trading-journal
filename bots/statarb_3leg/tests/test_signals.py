@@ -197,9 +197,19 @@ def test_mt5_csv_spread_column_converted(tmp_path):
 def test_default_config_is_audusd_nzdusd_with_48_bar_stop():
     cfg = AppConfig()
     assert cfg.pair == ("AUDUSD", "NZDUSD")
-    assert cfg.strategy.max_hold_bars == 48 and cfg.strategy.use_coint_gate
+    assert cfg.strategy.max_hold_bars == 48
+    assert cfg.strategy.use_coint_gate is False             # off by default (see README)
     assert cfg.strategy.coint_window == 250 and cfg.strategy.coint_max_half_life == 48
     assert {"AUD", "NZD", "USD"} <= set(cfg.filters.news_currencies)
+
+
+CFG_GATE = dataclasses.replace(CFG, strategy=dataclasses.replace(CFG.strategy,
+                                                                 use_coint_gate=True))
+
+
+def test_gate_off_by_default_never_blocks(pair):
+    res = replay(pair)
+    assert res["bot"].blocked["cointegration"] == 0 and not res["coint_checks"]
 
 
 def test_gate_blocks_a_drifting_relationship():
@@ -209,15 +219,14 @@ def test_gate_blocks_a_drifting_relationship():
     walk = np.exp(np.cumsum(rng.normal(0, 0.0015, len(drifting["EURUSD"]))))
     for col in ("open", "high", "low", "close"):
         drifting["EURUSD"][col] = drifting["EURUSD"][col] * walk
-    res = replay(drifting)
-    gated_off = replay(drifting, cfg=dataclasses.replace(
-        CFG, strategy=dataclasses.replace(CFG.strategy, use_coint_gate=False)))
+    res = replay(drifting, cfg=CFG_GATE)
+    gated_off = replay(drifting)
     assert res["bot"].blocked["cointegration"] > 0
     assert len(res["baskets"]) < len(gated_off["baskets"]) / 2
 
 
 def test_gate_lets_a_mean_reverting_pair_trade(pair):
-    res = replay(pair)
+    res = replay(pair, cfg=CFG_GATE)
     checks = pd.DataFrame(res["coint_checks"], columns=["t", "passed", "p", "hl"])
     assert checks.passed.mean() > 0.6
     assert (checks.loc[checks.passed, "hl"] < 48).all()

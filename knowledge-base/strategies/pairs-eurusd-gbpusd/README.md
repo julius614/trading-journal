@@ -1,8 +1,10 @@
 # Pairs Trading EURUSD vs GBPUSD (H1, Kalman hedge ratio) — Strategy Review
 
 - **Source:** the user's pivot from the triangle (2026-10-03). **Code:** [`bots/statarb_3leg/`](../../../bots/statarb_3leg/).
-- **Status:** built; tested on synthetic data (37 tests) and on **real OANDA H1 data,
-  2014 – May 2020, with default settings and no tuning: −3.3%, PF 0.88.**
+- **Status (2026-10-03):** default pair is now AUDUSD/NZDUSD with a 48-bar time stop and
+  the cointegration gate off. Out of sample on AUD/NZD 2018–2026: **+8.2%, PF 1.38, 7/9
+  winning years** (section 6). The original 10-day-stop version lost 3.3% on EUR/GBP
+  2014–2020 (section 2).
 
 ## 1. Hypothesis
 EUR and GBP are both European currencies quoted against the same USD, so EURUSD and GBPUSD
@@ -85,6 +87,31 @@ New rules:
   losses, so the +3.6% is not out-of-sample. Confirm on the broker's 2021–2026 H1 data
   and on AUDUSD/NZDUSD, which isn't in the public dataset (no NZDUSD), using the sweep
   on broker downloads.
+
+## 6. Out-of-sample test: AUDUSD vs NZDUSD (broker H1, Sep 2018 – Oct 2026)
+The 48-bar stop was chosen from EUR/GBP results, so AUD/NZD is a genuine out-of-sample
+test of it. Sweep (`python -m bots.statarb_3leg.sweep …`), raw costs, $7/lot:
+
+| Variant | Trades | P&L | Win | Avg win / loss | PF | Max DD | Years + |
+|---|---|---|---|---|---|---|---|
+| Old: 240-bar stop, no gate | 97 | +$521 | 65% | +43 / −65 | 1.24 | −4.8% | 4/9 |
+| **48-bar stop only** | **145** | **+$825 (+8.2%)** | 57% | **+37 / −35** | **1.38** | −4.8% | **7/9** |
+| Gate only (240-bar stop) | 5 | −$204 | 40% | +36 / −92 | 0.26 | −2.5% | 1/4 |
+| 48-bar stop + gate | 5 | −$2 | 40% | +43 / −30 | 0.97 | −0.8% | 1/4 |
+
+**Conclusions (2026-10-03)**
+1. **The 48-bar time stop held up out of sample.** It improved both pairs (EUR/GBP −3.3% →
+   +3.6%; AUD/NZD +5.2% → +8.2%, 7/9 profitable years). Losses are now about the size of
+   wins, so single divergences no longer erase many winners. Most exits (115/145) are the
+   time stop: the edge is partial reversion within ~2 days.
+2. **The cointegration gate is now off by default.** It blocked almost every trade on both
+   pairs (5 and 7 trades in 6–8 years) without improving the ones it allowed. Re-tuning its
+   threshold now would be fitting to these results.
+3. **Strength of evidence:** about $5.70 per trade over 145 trades, roughly 1.8 standard
+   errors from zero. Suggestive, not conclusive, and only about 1% a year at 1× notional
+   (more size scales the drawdown too).
+4. **Next:** demo-trade AUD/NZD with the defaults for a few months, compare live fills and
+   spreads with the backtest, and keep size at 1× until they agree.
 
 ## Self-check questions
 1. Why is a positive win rate (63%) still a losing strategy here?

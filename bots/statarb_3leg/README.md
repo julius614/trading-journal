@@ -9,11 +9,16 @@ the hedge, then close when the gap closes.
 > found no tradeable edge: M5 triangle gaps were far smaller than 3-leg costs (see
 > `knowledge-base/strategies/statarb-triangle/`).
 >
-> **Real-data result for this version (OANDA H1 2014–2020, raw-account costs, default
-> settings, no tuning): 81 trades, −3.3%, profit factor 0.88.** Costs are no longer the
-> problem; spreads that don't revert are. See
-> `knowledge-base/strategies/pairs-eurusd-gbpusd/README.md`. Education, not financial
-> advice; demo first.
+> **Latest results (2026-10-03), default rules (48-bar time stop, cointegration gate off),
+> broker H1 data, raw-account costs ($7/lot):**
+> - **AUDUSD/NZDUSD, Sep 2018 – Oct 2026 (out-of-sample for the 48-bar rule):** 145 trades,
+>   **+$825 (+8.2%)**, PF 1.38, 57% wins, avg win **+$37** / avg loss **−$35**, max drawdown
+>   −4.8%, **7 of 9 years profitable**.
+> - EURUSD/GBPUSD, OANDA 2014 – 2020: 125 trades, +$363 (+3.6%), PF 1.14, max DD −4.3%.
+>
+> Promising, not proven: about 1% a year at 1× notional, roughly 1.8 standard errors from
+> zero. Demo-trade before risking money. See
+> `knowledge-base/strategies/pairs-eurusd-gbpusd/README.md`. Education, not financial advice.
 
 ## Layout
 | File | Role |
@@ -28,7 +33,7 @@ the hedge, then close when the gap closes.
 | `main.py` | `PairsBot` async loop (`--live` MT5, `--paper` replay) |
 | `backtest.py` | Replay two CSVs (first = y leg); P&L, swings vs costs, gate stats, β path, P&L by year; `--max-hold`, `--no-coint-gate` |
 | `sweep.py` | One-command ablation: old rules vs 48-bar stop vs gate vs both, same data and costs |
-| `tests/` | 49 tests: Kalman, cointegration, fee gate, position balancer, signals/end-to-end |
+| `tests/` | 50 tests: Kalman, cointegration, fee gate, position balancer, signals/end-to-end |
 
 ## The model
 - **Prices:** y = ln(EURUSD), x = ln(GBPUSD).
@@ -50,7 +55,7 @@ the hedge, then close when the gap closes.
 | Item | Rule |
 |---|---|
 | Entry | Z < −2 → **long spread**: BUY y (AUDUSD), SELL x (NZDUSD). Z > +2 → **short spread** (mirror). Cointegration gate and fee gate must pass. |
-| Cointegration gate | Over the last **250 H1 bars**: Engle–Granger p-value **< 0.05** AND residual half-life **< 48 bars**. Otherwise no new entries (exits are unaffected). |
+| Cointegration gate | **Off by default** (`use_coint_gate=False`). When on: over the last 250 H1 bars, Engle–Granger p < 0.05 AND residual half-life < 48 bars, otherwise no new entries. Disabled because it almost never passes (see below). |
 | Exit | Z back within ±0.1 of zero, or crossed it |
 | Stop | **Entry-relative**: long exits if Z ≤ Z_entry − 2.0, short if Z ≥ Z_entry + 2.0 (`stop_z_extra`) |
 | Time stop | **48 H1 bars** (~2 trading days; weekend hours don't count). Not reverted by then → close both legs. |
@@ -65,10 +70,25 @@ Pair: `STATARB_PAIR=AUDUSD,NZDUSD` (default) or `EURUSD,GBPUSD`; the backtest ta
 from its two `SYMBOL=CSV` arguments. Both legs must be quoted in USD, and the
 account currency must be USD or one leg's base currency.
 
+## Why the cointegration gate is off
+Over 250 H1 bars an Engle–Granger test at p < 0.05 almost never passes on FX pairs:
+
+| Data | Signals checked | Passed | Trades with gate on | Result |
+|---|---|---|---|---|
+| EURUSD/GBPUSD 2014–2020 | 1,733 | 7 (median p 0.87) | 7 | +$72 (48-bar stop) |
+| AUDUSD/NZDUSD 2018–2026 | — | — | 5 | −$2 (48-bar stop) |
+
+Even on a synthetic pair built to revert with a 15-bar half-life, it passes only ~17% of
+windows. 250 bars give the test little power, and fitting β in the same window makes
+it stricter still. With the gate on, the bot hardly trades, and the trades it allows aren't
+better. It stays in the code (`cointegration.py`, `use_coint_gate=True`). Choosing a looser
+threshold now would be fitting to these results, so any new setting must be pre-declared
+and tested on unseen data.
+
 ## Setup and run (from the repo root)
 ```powershell
 pip install -r bots/statarb_3leg/requirements.txt
-pytest -q bots/statarb_3leg/tests            # 49 passed
+pytest -q bots/statarb_3leg/tests            # 50 passed
 ```
 
 ### 1. Download H1 history (MT5 open)

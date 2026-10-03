@@ -41,8 +41,10 @@ class StrategyConfig:
     clip_sigma: Optional[float] = 4.0      # cap outliers when updating the noise estimate
     warmup_bars: int = 500                 # bars fed to the filter before any trading
     history_bars: int = 1500               # bars pulled at start-up for warm-up
-    # rolling stationarity gate on the static-hedge spread y - beta*x
-    use_coint_gate: bool = True
+    # rolling Engle-Granger + half-life gate. OFF by default: on 250 H1 bars it almost
+    # never passes (5 trades in 8 years on AUD/NZD, 7 in 6 years on EUR/GBP) and it did
+    # not improve the few trades it allowed. See the strategy note before turning it on.
+    use_coint_gate: bool = False
     coint_window: int = 250                # bars tested
     coint_max_pvalue: float = 0.05         # ADF p-value must be below this
     coint_max_half_life: float = 48.0      # bars; expected reversion must be faster
