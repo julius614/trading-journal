@@ -4,7 +4,11 @@ Modular Python framework for the **Asian-range liquidity sweep** (Accumulation �
 Manipulation → Distribution) on EURUSD/GBPUSD. It adds a Kalman-filter Z-score and a
 volatility-spike filter, plus "Prop Shield" risk rules.
 
-> **Demo first.** This is untested on real market data. Run the replay, then a demo
+> **Research result (2026-10-03): the strategy showed no edge on 6+ years of real data and
+> lost money after costs** — see the
+> [tuning report](../../knowledge-base/strategies/amd-session-sweep/tuning-report.md).
+> The framework (risk, execution, replay, research tools in `research/`) is reusable for
+> other signals. **Demo first** for anything you build on it. Run the replay, then a demo
 > account for weeks, before any live money. See the strategy review and validation plan in
 > [`knowledge-base/strategies/amd-session-sweep/README.md`](../../knowledge-base/strategies/amd-session-sweep/README.md).
 > Education, not financial advice.
@@ -104,7 +108,6 @@ Smart App Control can block a brand-new pandas release. Install a well-known one
 `pip install "pandas==2.2.3"`.
 
 ## Not done / limits
-- **No results on real market data yet** — the replay has only been run on synthetic data.
 - Replays use M5 bars: if a bar touches both SL and TP, SL is assumed first; spread is fixed.
 - No news filter (NFP/CPI/FOMC days behave very differently).
 - Interactive Brokers isn't implemented; add a `Broker` subclass in `execution.py`.

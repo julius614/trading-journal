@@ -49,45 +49,49 @@ def _bars(symbol: str, start: int, end: int) -> pd.DataFrame:
     return b[(b.index.year >= start) & (b.index.year <= end)]
 
 
-def _signals_job(args):
-    symbol, start, end, key = args
+def _target_cfg(key, frac: float, ext: float) -> AppConfig:
+    sweep, disp, z, vol = key
+    return dataclasses.replace(
+        signal_config(sweep, disp, z, vol),
+        strategy=StrategyConfig(sweep_min_pips=sweep[0], sweep_max_pips=sweep[1],
+                                displacement_max_bars=disp, tp1_fraction=frac,
+                                tp2_extension=ext))
+
+
+def _job(args):
+    """Signals for one (symbol, signal settings), then every target x window simulation."""
+    symbol, start, end, key, cost_mult = args
     sweep, disp, z, vol = key
     bars = _bars(symbol, start, end)
-    atr_map = daily_atr_by_day(bars, 14)
-    return symbol, key, generate_signals(bars, symbol, signal_config(sweep, disp, z, vol), atr_map)
+    sigs = generate_signals(bars, symbol, signal_config(sweep, disp, z, vol),
+                            daily_atr_by_day(bars, 14))
+    out = {}
+    for tname, (frac, ext) in TARGETS.items():
+        cfg = _target_cfg(key, frac, ext)
+        for wname, wset in WINDOWS.items():
+            chosen = [x for x in sigs if x.window in wset]
+            if ext:   # signals were generated without the extension; move TP2 out
+                chosen = [dataclasses.replace(
+                    x, tp2=x.tp2 + x.side * ext * (x.asian_high - x.asian_low)) for x in chosen]
+            tr = simulate(bars, chosen, symbol, cfg, RAW_ACCOUNT[symbol].scaled(cost_mult))
+            out[(tname, wname)] = trades_frame(tr)
+    return symbol, key, out
 
 
 def run_grid(start: int, end: int, cost_mult: float = 1.0, workers: int = 4) -> pd.DataFrame:
     keys = list(itertools.product(SWEEPS, DISP_BARS, Z_GATES, VOL))
-    jobs = [(s, start, end, k) for s in ("EURUSD", "GBPUSD") for k in keys]
+    jobs = [(s, start, end, k, cost_mult) for s in ("EURUSD", "GBPUSD") for k in keys]
     with ProcessPoolExecutor(workers) as pool:
-        results = list(pool.map(_signals_job, jobs))
-    bars = {s: _bars(s, start, end) for s in ("EURUSD", "GBPUSD")}
-    sigs: Dict[Tuple[str, tuple], list] = {(s, k): v for s, k, v in results}
+        results = {(s, k): out for s, k, out in pool.map(_job, jobs)}
     rows = []
     for k in keys:
         sweep, disp, z, vol = k
-        for tname, (frac, ext) in TARGETS.items():
-            cfg = dataclasses.replace(
-                signal_config(sweep, disp, z, vol),
-                strategy=StrategyConfig(sweep_min_pips=sweep[0], sweep_max_pips=sweep[1],
-                                        displacement_max_bars=disp, tp1_fraction=frac,
-                                        tp2_extension=ext))
-            for wname, wset in WINDOWS.items():
-                frames = []
-                for s in ("EURUSD", "GBPUSD"):
-                    chosen = [x for x in sigs[(s, k)] if x.window in wset]
-                    # target geometry depends on the config; rebuild tp2 for the extension
-                    if ext:
-                        chosen = [dataclasses.replace(
-                            x, tp2=x.tp2 + x.side * ext * (x.asian_high - x.asian_low))
-                            for x in chosen]
-                    tr = simulate(bars[s], chosen, s, cfg, RAW_ACCOUNT[s].scaled(cost_mult))
-                    frames.append(trades_frame(tr))
-                df = pd.concat(frames, ignore_index=True)
-                for pair, sub in (("EURUSD", df[df.symbol == "EURUSD"] if len(df) else df),
-                                  ("GBPUSD", df[df.symbol == "GBPUSD"] if len(df) else df),
-                                  ("both", df)):
+        for tname in TARGETS:
+            for wname in WINDOWS:
+                df = pd.concat([results[(s, k)][(tname, wname)] for s in ("EURUSD", "GBPUSD")],
+                               ignore_index=True)
+                for pair in ("EURUSD", "GBPUSD", "both"):
+                    sub = df if pair == "both" or df.empty else df[df.symbol == pair]
                     st = stats(sub["r"] if len(sub) else pd.Series(dtype=float))
                     yearly = sub.groupby("year")["r"].sum() if len(sub) else pd.Series(dtype=float)
                     rows.append({

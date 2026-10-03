@@ -7,7 +7,9 @@
   concept; no external source was used.
 - **Code:** [`bots/amd_fx/`](../../../bots/amd_fx/) — the full rule table and run instructions
   are in its README.
-- **Status:** built and unit-tested on synthetic data only. **No real-data results yet.**
+- **Status (2026-10-03): tested on real data — no edge found.** See the
+  [tuning report](tuning-report.md): 6.4 years of OANDA data plus the user's broker data;
+  1,944 configurations; the best tuned versions lost money on unseen years. **Do not trade it.**
 
 ## 1. Hypothesis — why might this work?
 - The Asian session is quiet, so its high and low collect **resting stop orders** (stops
