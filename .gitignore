@@ -2,3 +2,6 @@ __pycache__/
 .pytest_cache/
 *.pyc
 sample_5min.csv
+logs/
+data/amd_fx/
+.env

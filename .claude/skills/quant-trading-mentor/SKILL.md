@@ -17,6 +17,8 @@ repo root).
 | EPAT syllabus, format, fees snapshot, self-study map | `knowledge-base/epat/README.md` |
 | 15-min ORB "Max way" strategy: rules, research, validation plan | `knowledge-base/strategies/orb-15min-max/README.md` |
 | ORB backtester (Python) and TradingView strategy | `strategies/orb_15min/README.md` |
+| AMD session-sweep FX strategy review | `knowledge-base/strategies/amd-session-sweep/README.md` |
+| AMD MT5 bot framework (sizing, Prop Shield, replay) | `bots/amd_fx/README.md` |
 
 ## Ground rules
 
