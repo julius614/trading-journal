@@ -1,53 +1,48 @@
-"""Triangle data: aligned closed M5 bars for EURUSD/GBPUSD/EURGBP, live ticks, CSV loading."""
+"""Pair data: aligned closed bars for the two legs, live ticks, and CSV loading."""
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from typing import Dict, Mapping, Optional
+from typing import Dict, Mapping, Sequence
 
+import numpy as np
 import pandas as pd
 
 from ..amd_fx.data_fetcher import ensure_utc
-from .config import PIP, TRIANGLE, AppConfig
+from .config import PIP, AppConfig
 from .execution import Broker, Tick
-from .kalman_statarb import log_spread
 
 POINT = 0.00001   # MT5 "spread" column is in points (5-digit pricing)
 
 
-def align_closes(frames: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
-    """Closes of the three pairs on timestamps all three share (inner join), plus the
-    log spread."""
-    closes = pd.concat({s: ensure_utc(frames[s])["close"] for s in TRIANGLE}, axis=1,
-                       join="inner").dropna()
-    closes["spread"] = log_spread(closes["EURGBP"], closes["EURUSD"], closes["GBPUSD"])
+def align_closes(frames: Mapping[str, pd.DataFrame], y: str, x: str) -> pd.DataFrame:
+    """Closes of both legs on shared timestamps (inner join), plus log prices."""
+    closes = pd.concat({y: ensure_utc(frames[y])["close"], x: ensure_utc(frames[x])["close"]},
+                       axis=1, join="inner").dropna()
+    closes["log_y"] = np.log(closes[y])
+    closes["log_x"] = np.log(closes[x])
     return closes
 
 
-class TriangleFeed:
-    """Pulls closed bars and live ticks for the three legs from a broker."""
+class PairFeed:
+    """Pulls closed bars and live ticks for the two legs from a broker."""
 
     def __init__(self, broker: Broker, cfg: AppConfig) -> None:
         self.broker = broker
         self.cfg = cfg
 
     async def closed_bars(self, count: int) -> pd.DataFrame:
-        """Aligned closes (and spread) for the last `count` closed bars of each pair."""
         frames = {}
-        for s in TRIANGLE:   # sequential: the MT5 library is not thread-safe
+        for s in self.cfg.pair:   # sequential: the MT5 library is not thread-safe
             frames[s] = await self.broker.get_rates(self.cfg.broker_symbol(s),
                                                     self.cfg.strategy.timeframe, count)
-        return align_closes(frames)
+        return align_closes(frames, self.cfg.y, self.cfg.x)
 
     async def ticks(self) -> Dict[str, Tick]:
-        out = {}
-        for s in TRIANGLE:
-            out[s] = await self.broker.get_tick(self.cfg.broker_symbol(s))
-        return out
+        return {s: await self.broker.get_tick(self.cfg.broker_symbol(s)) for s in self.cfg.pair}
 
 
 def load_leg_csv(path: str | Path) -> pd.DataFrame:
-    """Read one pair's M5 CSV (from download_history or any OHLC export).
+    """Read one symbol's CSV (from download_history or any OHLC export).
 
     Keeps open/high/low/close and, when present, converts MT5's `spread` column (points)
     to `spread_pips` so replays use the broker's real historical spreads.
@@ -68,8 +63,8 @@ def load_leg_csv(path: str | Path) -> pd.DataFrame:
     return ensure_utc(out)
 
 
-def load_triangle(paths: Mapping[str, str]) -> Dict[str, pd.DataFrame]:
-    missing = set(TRIANGLE) - set(paths)
+def load_pair(paths: Mapping[str, str], pair: Sequence[str]) -> Dict[str, pd.DataFrame]:
+    missing = set(pair) - set(paths)
     if missing:
         raise ValueError(f"need CSVs for {sorted(missing)}")
-    return {s: load_leg_csv(paths[s]) for s in TRIANGLE}
+    return {s: load_leg_csv(paths[s]) for s in pair}

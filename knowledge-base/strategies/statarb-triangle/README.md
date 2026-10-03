@@ -1,6 +1,8 @@
 # Triangular Stat-Arb (EURUSD / GBPUSD / EURGBP) — Strategy Review
 
-- **Source:** the user's spec (2026-10-03). **Code:** [`bots/statarb_3leg/`](../../../bots/statarb_3leg/).
+- **Source:** the user's spec (2026-10-03). **Code:** git history, commit `e5b753f` — the
+  folder `bots/statarb_3leg/` now holds the 2-leg pairs version
+  ([review](../pairs-eurusd-gbpusd/README.md)).
 - **Status (2026-10-03):** measured on the user's broker data (May 2025 – Oct 2026). **No
   tradeable edge** — see section 5.
 

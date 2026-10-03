@@ -1,10 +1,10 @@
 """Broker interface (shared with the AMD bot), MT5 adapter, a currency-aware paper broker,
-and the three-leg basket executor.
+and the multi-leg basket executor (used here for 2-leg pair baskets).
 
 Basket rules:
 - Legs are sent one after another. If any leg fails, every leg already filled is closed
   at market straight away (rollback), so the bot never sits on an unhedged leg.
-- Closing sends all three closes; a failed close is retried, and a leg that still can't be
+- Closing sends a close for every leg; a failed close is retried, and a leg that still can't be
   closed keeps the basket open and is logged as CRITICAL for manual attention.
 - The open basket is saved to a JSON file so a restarted bot can pick it up.
 """
@@ -22,7 +22,7 @@ from loguru import logger
 
 from ..amd_fx.execution import (Broker, BrokerError, MT5Broker, OrderResult, Position,  # noqa: F401
                                 SymbolInfo, Tick)
-from .config import CONTRACT_SIZE, PIP, AppConfig, TRIANGLE
+from .config import CONTRACT_SIZE, PIP, AppConfig
 from .fee_gate import GateResult, convert, quote_ccy
 from .risk_manager import LegPlan
 
@@ -107,7 +107,7 @@ class PaperBroker(Broker):
 
     def _mids(self) -> Dict[str, float]:
         out = {}
-        for s in TRIANGLE:
+        for s in self.data:
             t = self._tick_now(s)
             out[s] = (t.bid + t.ask) / 2
         return out
@@ -230,6 +230,7 @@ class Basket:
     entry_deviation_pips: float
     entry_cost_pips: float
     legs: List[Leg] = field(default_factory=list)
+    entry_beta: float = float("nan")
     bars_held: int = 0
     closed: bool = False
     closed_at: str = ""
@@ -243,7 +244,7 @@ class Basket:
 
 
 class MultiLegExecutor:
-    """Opens and closes three-leg baskets as one unit."""
+    """Opens and closes multi-leg baskets (here: 2-leg pairs) as one unit."""
 
     def __init__(self, broker: Broker, cfg: AppConfig, state_path: Optional[Path] = None,
                  close_retries: int = 3, retry_delay: float = 0.5) -> None:
@@ -294,10 +295,11 @@ class MultiLegExecutor:
                                 leg.symbol, leg.ticket, res.message)
 
     async def open_basket(self, plans: List[LegPlan], direction: int, z: float,
-                          gate: GateResult, now: datetime) -> Optional[Basket]:
+                          gate: GateResult, now: datetime,
+                          beta: float = float("nan")) -> Optional[Basket]:
         if self.basket is not None:
             raise RuntimeError("a basket is already open")
-        basket_id = f"SA3{now:%y%m%d%H%M}"
+        basket_id = f"PAIR{now:%y%m%d%H%M}"
         filled: List[Leg] = []
         for plan in plans:
             res = await self.broker.market_order(self.cfg.broker_symbol(plan.symbol), plan.side,
@@ -310,7 +312,7 @@ class MultiLegExecutor:
                 return None
             filled.append(Leg(plan.symbol, plan.side, plan.lots, res.ticket, res.price))
         self.basket = Basket(basket_id, direction, now.isoformat(), z,
-                             gate.expected_reversion_pips, gate.total_cost_pips, filled)
+                             gate.expected_reversion_pips, gate.total_cost_pips, filled, beta)
         self._save()
         logger.info("OPEN {} {}: z={:+.2f} edge {:.2f} pips vs cost {:.2f} pips | {}",
                     basket_id, self.basket.label, z, gate.expected_reversion_pips,

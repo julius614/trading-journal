@@ -20,7 +20,8 @@ repo root).
 | AMD session-sweep FX strategy review | `knowledge-base/strategies/amd-session-sweep/README.md` |
 | AMD MT5 bot framework (sizing, Prop Shield, replay) | `bots/amd_fx/README.md` |
 | AMD tuning report (no edge found, 2014–2020) | `knowledge-base/strategies/amd-session-sweep/tuning-report.md` |
-| Triangular stat-arb review and 3-leg bot | `knowledge-base/strategies/statarb-triangle/README.md`, `bots/statarb_3leg/README.md` |
+| Triangular stat-arb review (retired, no edge) | `knowledge-base/strategies/statarb-triangle/README.md` |
+| Pairs trading EURUSD/GBPUSD H1 (Kalman hedge ratio) review and bot | `knowledge-base/strategies/pairs-eurusd-gbpusd/README.md`, `bots/statarb_3leg/README.md` |
 
 ## Ground rules
 

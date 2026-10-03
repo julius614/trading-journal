@@ -1,129 +1,132 @@
-"""Triangle log-spread and an adaptive 1-D local-level Kalman filter (pure numpy).
+"""Dynamic hedge ratio for a 2-leg pair: an adaptive 2-state Kalman filter (pure numpy).
 
-Spread_t = ln(EURGBP) - ln(EURUSD / GBPUSD)
+Model on log prices, y = ln(Y), x = ln(X):
 
-Model (local level):   mean_t = mean_{t-1} + w,  w ~ N(0, Q)
-                       spread_t = mean_t + v,     v ~ N(0, R)
+    state   theta_t = [beta_t, alpha_t]      theta_t = theta_{t-1} + w,  w ~ N(0, Q)
+    obs     y_t = beta_t * x_t + alpha_t + v,                            v ~ N(0, R)
 
-Z_t = (Spread_t - Mean_{t|t-1}) / sqrt(P_{t|t-1} + R_t)
+Each bar:  H = [x_t, 1],  P_pred = P + Q,  e = y_t - H theta,  S = H P_pred H' + R
+           Z_t = e / sqrt(S)
 
-The Z-score uses the *predicted* mean and the forecast-error variance (state uncertainty
-plus observation noise). Using the state variance P alone would be wrong: P measures how
-sure the filter is about the mean, shrinks towards zero, and would blow Z up. R is
-estimated online (cumulative mean during warm-up, then an exponentially weighted mean of
-squared innovations), and Q = q_ratio * R, so the filter adapts to changing noise.
-Innovations are clipped at `clip_sigma` standard deviations for the noise estimate only, so
-a single large dislocation doesn't inflate R for hundreds of bars and mute later signals;
-the Z-score itself always uses the full innovation.
+e is the spread (how far Y is from its hedge-ratio fair value) and S is the full forecast
+variance: state uncertainty projected through H plus observation noise, i.e. the
+sqrt(P + R) form. Using P alone would be wrong - it shrinks towards 0 and inflates Z.
+R is estimated online (cumulative mean during warm-up, then an exponentially weighted mean
+of squared innovations); innovations beyond `clip_sigma` standard deviations are capped for
+the R update only, so one shock doesn't inflate R and mute later signals. Q = diag(q_beta,
+q_alpha) * R, so the hedge ratio adapts at a pace relative to the current noise.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Iterable, Optional, Union
+from typing import Iterable, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
 from .config import PIP
 
-Number = Union[float, np.ndarray, pd.Series]
 
-
-def synthetic_eurgbp(eurusd: Number, gbpusd: Number) -> Number:
-    """EURGBP implied by the two USD pairs."""
-    return eurusd / gbpusd
-
-
-def log_spread(eurgbp: Number, eurusd: Number, gbpusd: Number) -> Number:
-    """ln(EURGBP actual) - ln(synthetic EURGBP). Zero when the triangle is consistent."""
-    return np.log(eurgbp) - np.log(synthetic_eurgbp(eurusd, gbpusd))
-
-
-def deviation_pips(dev_log: float, eurgbp: float) -> float:
-    """A log-spread deviation expressed in EURGBP pips."""
-    return abs(dev_log) * eurgbp / PIP
+def spread_pips(spread_log: float, y_price: float) -> float:
+    """A log spread expressed in pips of the y leg."""
+    return abs(spread_log) * y_price / PIP
 
 
 @dataclass(frozen=True)
-class KalmanOutput:
-    spread: float
-    mean: float          # predicted mean (before this observation)
-    std: float           # forecast-error standard deviation
+class HedgeOutput:
+    beta: float          # hedge ratio used for this bar's forecast (before the update)
+    alpha: float
+    spread: float        # innovation e = y - (beta x + alpha), log units
+    std: float           # sqrt(S): forecast-error standard deviation
     z: float             # NaN during warm-up
     warm: bool
 
-    @property
-    def deviation(self) -> float:
-        return self.spread - self.mean
 
+class KalmanHedgeRatio:
+    """Adaptive Kalman filter for y = beta * x + alpha."""
 
-class LocalLevelKalman:
-    """Adaptive local-level Kalman filter with an online noise estimate."""
-
-    def __init__(self, q_ratio: float = 1e-4, r_halflife: int = 288, warmup: int = 288,
-                 clip_sigma: Optional[float] = 4.0) -> None:
-        if q_ratio <= 0:
-            raise ValueError("q_ratio must be positive")
-        if r_halflife < 1 or warmup < 2:
-            raise ValueError("r_halflife must be >= 1 and warmup >= 2")
-        self.q_ratio = q_ratio
-        self.alpha = 1.0 - 0.5 ** (1.0 / r_halflife)
+    def __init__(self, q_beta: float = 1e-5, q_alpha: float = 1e-5, r_halflife: int = 500,
+                 warmup: int = 500, clip_sigma: Optional[float] = 4.0,
+                 init_var: float = 1.0) -> None:
+        if q_beta <= 0 or q_alpha <= 0:
+            raise ValueError("q_beta and q_alpha must be positive")
+        if r_halflife < 1 or warmup < 3:
+            raise ValueError("r_halflife must be >= 1 and warmup >= 3")
+        self.q = np.diag([q_beta, q_alpha])
+        self.alpha_ewm = 1.0 - 0.5 ** (1.0 / r_halflife)
         self.warmup = warmup
         self.clip_sigma = clip_sigma
+        self.init_var = init_var
         self.reset()
 
     def reset(self) -> None:
-        self.mean = float("nan")
-        self.p = 0.0
+        self.theta = np.zeros(2)            # [beta, alpha]
+        self.P = np.eye(2) * self.init_var  # very uncertain start
         self.r = 0.0
         self.n = 0
         self._sq_sum = 0.0
 
     @property
+    def beta(self) -> float:
+        return float(self.theta[0])
+
+    @property
+    def alpha(self) -> float:
+        return float(self.theta[1])
+
+    @property
     def warm(self) -> bool:
         return self.n >= self.warmup
 
-    def update(self, x: float) -> KalmanOutput:
-        """Feed one spread observation; returns the Z-score computed BEFORE learning it."""
-        x = float(x)
-        if not math.isfinite(x):
-            raise ValueError("spread observation must be finite")
+    def update(self, y: float, x: float) -> HedgeOutput:
+        """Feed one bar of log prices; returns Z computed BEFORE learning from this bar."""
+        y, x = float(y), float(x)
+        if not (math.isfinite(y) and math.isfinite(x)):
+            raise ValueError("log prices must be finite")
+        h = np.array([x, 1.0])
         if self.n == 0:
-            self.mean, self.p, self.n = x, 0.0, 1
-            return KalmanOutput(x, x, float("nan"), float("nan"), False)
+            # start at beta = 1 with alpha matching the first bar; R unknown yet
+            self.theta = np.array([1.0, y - x])
+            self.n = 1
+            return HedgeOutput(1.0, y - x, 0.0, float("nan"), float("nan"), False)
 
-        q = self.q_ratio * self.r
-        p_pred = self.p + q
-        innov = x - self.mean
-        s = p_pred + self.r
-        std = math.sqrt(s) if s > 0 else float("nan")
-        z = innov / std if self.warm and std and std > 0 else float("nan")
-        out = KalmanOutput(x, self.mean, std, z, self.warm)
+        r_used = self.r if self.r > 0 else 1e-12
+        P_pred = self.P + self.q * r_used
+        e = y - float(h @ self.theta)
+        hph = float(h @ P_pred @ h)
+        s = hph + r_used
+        std = math.sqrt(s)
+        z = e / std if self.warm else float("nan")
+        out = HedgeOutput(float(self.theta[0]), float(self.theta[1]), e, std, z, self.warm)
 
-        # noise estimate: cumulative during warm-up, EWMA afterwards
-        sq = innov * innov
-        if self.clip_sigma is not None and self.n > 10 and s > 0:
-            sq = min(sq, self.clip_sigma ** 2 * s)   # robust: cap outliers for the R update
+        # observation-noise estimate (robust)
+        sq = e * e
+        if self.clip_sigma is not None and self.n > 10 and self.r > 0:
+            sq = min(sq, self.clip_sigma ** 2 * s)
         self._sq_sum += sq
         if self.n < self.warmup:
             self.r = self._sq_sum / self.n
         else:
-            self.r = (1 - self.alpha) * self.r + self.alpha * max(sq - p_pred, 0.0)
-        self.r = max(self.r, 1e-18)
+            self.r = (1 - self.alpha_ewm) * self.r + self.alpha_ewm * max(sq - hph, 0.0)
+        self.r = max(self.r, 1e-14)
 
-        # Kalman update of the mean
-        if self.n == 1:
-            p_pred = self.r   # first mean (= first observation) is as uncertain as one obs
-        s_new = p_pred + self.r
-        k = p_pred / s_new if s_new > 0 else 0.0
-        self.mean += k * innov
-        self.p = (1 - k) * p_pred
+        # state update with the refreshed R
+        s_new = hph + self.r
+        k = (P_pred @ h) / s_new
+        self.theta = self.theta + k * e
+        self.P = P_pred - np.outer(k, h @ P_pred)
+        self.P = (self.P + self.P.T) / 2.0      # keep it symmetric
         self.n += 1
         return out
 
-    def run(self, spreads: Iterable[float]) -> pd.DataFrame:
-        """Batch helper: feed a sequence; returns spread, mean, std, z per step."""
-        rows = [self.update(x) for x in spreads]
-        return pd.DataFrame({"spread": [r.spread for r in rows], "mean": [r.mean for r in rows],
-                             "std": [r.std for r in rows], "z": [r.z for r in rows]})
+    def run(self, y: Iterable[float], x: Iterable[float]) -> pd.DataFrame:
+        """Batch helper over aligned log-price sequences."""
+        rows = [self.update(a, b) for a, b in zip(y, x)]
+        return pd.DataFrame({"beta": [r.beta for r in rows], "alpha": [r.alpha for r in rows],
+                             "spread": [r.spread for r in rows], "std": [r.std for r in rows],
+                             "z": [r.z for r in rows]})
+
+
+def log_prices(y_price: float, x_price: float) -> Tuple[float, float]:
+    return math.log(y_price), math.log(x_price)

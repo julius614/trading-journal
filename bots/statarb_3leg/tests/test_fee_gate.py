@@ -4,70 +4,66 @@ import pytest
 
 from bots.amd_fx.execution import Tick
 from bots.statarb_3leg.config import FilterConfig
-from bots.statarb_3leg.fee_gate import convert, evaluate, neutral_lots
+from bots.statarb_3leg.fee_gate import convert, evaluate, hedge_lots
 
 T = datetime(2024, 3, 4, 10, tzinfo=timezone.utc)
-EU, GU = 1.1000, 1.2700
-EG = EU / GU                                   # 0.866142
+EU, GU, BETA = 1.1000, 1.2700, 0.6
 
 
-def ticks(eu_spr=0.2, gu_spr=0.5, eg_spr=0.6):
-    return {
-        "EURUSD": Tick(T, EU, EU + eu_spr * 1e-4),
-        "GBPUSD": Tick(T, GU, GU + gu_spr * 1e-4),
-        "EURGBP": Tick(T, EG, EG + eg_spr * 1e-4),
-    }
+def ticks(eu_spr=0.2, gu_spr=0.5):
+    return {"EURUSD": Tick(T, EU, EU + eu_spr * 1e-4), "GBPUSD": Tick(T, GU, GU + gu_spr * 1e-4)}
 
 
-def test_cost_in_eurgbp_pips_matches_hand_calculation():
-    cfg = FilterConfig(commission_per_lot=7.0)
-    g = evaluate(5e-4, ticks(), cfg, "USD")
-    # per 1 EURGBP lot (pip value = 10 GBP = 12.70 USD):
-    #   EURGBP 0.6 pip -> 0.60 pips; EURUSD 1 lot x 0.2 pip = $2 -> 0.157;
-    #   GBPUSD 0.866 lot x 0.5 pip = $4.33 -> 0.341; commission 7 x 2.866 = $20.06 -> 1.580
-    assert g.leg_cost_pips["EURGBP"] == pytest.approx(0.6, rel=1e-6)
-    assert g.leg_cost_pips["EURUSD"] == pytest.approx(2.0 / 12.7, rel=1e-4)
-    assert g.leg_cost_pips["GBPUSD"] == pytest.approx(EG * 5 / 12.7, rel=1e-4)
-    assert g.leg_cost_pips["commission"] == pytest.approx(7 * (2 + EG) / 12.7, rel=1e-4)
+def gate(spread_log, cfg=FilterConfig(), **kw):
+    return evaluate(spread_log, kw.pop("t", ticks()), cfg, "EURUSD", "GBPUSD", BETA, **kw)
+
+
+def test_cost_in_y_pip_equivalents_matches_hand_calculation():
+    g = gate(0.004, FilterConfig(commission_per_lot=7.0))
+    x_lots = 0.6 * 1.1 / 1.27                                  # 0.5197 lots of GBPUSD
+    # 1 lot EURUSD: pip value $10. EURUSD 0.2 pip -> $2 -> 0.2;
+    # GBPUSD 0.5197 lot x 0.5 pip -> $2.60 -> 0.26; commission 7 x 1.5197 -> 1.064
+    assert g.leg_cost_pips["EURUSD"] == pytest.approx(0.2, rel=1e-6)
+    assert g.leg_cost_pips["GBPUSD"] == pytest.approx(x_lots * 0.5, rel=1e-4)
+    assert g.leg_cost_pips["commission"] == pytest.approx(0.7 * (1 + x_lots), rel=1e-4)
     assert g.total_cost_pips == pytest.approx(sum(g.leg_cost_pips.values()), rel=1e-9)
-    # expected reversion = |dev| x EURGBP / pip (mid-price based)
-    assert g.expected_reversion_pips == pytest.approx(5e-4 * EG / 1e-4, rel=1e-3)
+    assert g.expected_reversion_pips == pytest.approx(0.004 * EU / 1e-4, rel=1e-3)   # ~44 pips
+    assert g.passed and g.ratio > 25
 
 
-def test_gate_threshold():
-    cfg = FilterConfig(commission_per_lot=7.0, min_edge_to_cost=2.5)
-    cost = evaluate(1e-4, ticks(), cfg).total_cost_pips          # ~2.68 pips
-    needed_log = 2.5 * cost * 1e-4 / EG
-    assert not evaluate(needed_log * 0.98, ticks(), cfg).passed
-    assert evaluate(needed_log * 1.02, ticks(), cfg).passed
-    small = evaluate(1e-5, ticks(), cfg)                          # a typical 0.1-pip wobble
-    assert not small.passed and "edge/cost" in small.reason
+def test_threshold():
+    cfg = FilterConfig(min_edge_to_cost=2.5)
+    cost = gate(0.001, cfg).total_cost_pips                       # ~1.52 pips
+    needed = 2.5 * cost * 1e-4 / EU
+    assert not gate(needed * 0.98, cfg).passed
+    assert gate(needed * 1.02, cfg).passed
 
 
 def test_ratio_does_not_depend_on_size():
-    cfg = FilterConfig()
-    a = evaluate(8e-4, ticks(), cfg, lots=neutral_lots(1.0, EG))
-    b = evaluate(8e-4, ticks(), cfg, lots=neutral_lots(7.0, EG))
+    a = gate(0.003, lots={"EURUSD": 1.0, "GBPUSD": hedge_lots(1.0, BETA, EU, GU)})
+    b = gate(0.003, lots={"EURUSD": 6.0, "GBPUSD": hedge_lots(6.0, BETA, EU, GU)})
     assert a.ratio == pytest.approx(b.ratio, rel=1e-9)
-    assert b.cost_account == pytest.approx(7 * a.cost_account, rel=1e-9)
+    assert b.cost_account == pytest.approx(6 * a.cost_account, rel=1e-9)
 
 
-def test_wide_leg_spread_rejects():
-    g = evaluate(5e-3, ticks(eg_spr=4.0), FilterConfig(max_leg_spread_pips=3.0))
-    assert not g.passed and "EURGBP" in g.reason
+def test_wide_spread_rejects():
+    g = gate(0.01, FilterConfig(max_leg_spread_pips=3.0), t=ticks(gu_spr=4.0))
+    assert not g.passed and "GBPUSD" in g.reason
 
 
 def test_account_currency_does_not_change_ratio():
+    # commission is set in the account currency (EUR 7 != USD 7), so compare without it
     cfg = FilterConfig(commission_per_lot=0.0)
-    usd = evaluate(8e-4, ticks(), cfg, "USD")
-    eur = evaluate(8e-4, ticks(), cfg, "EUR")
+    usd = gate(0.003, cfg, account_ccy="USD")
+    eur = gate(0.003, cfg, account_ccy="EUR")
     assert usd.ratio == pytest.approx(eur.ratio, rel=1e-9)
     assert eur.cost_account == pytest.approx(usd.cost_account / EU, rel=1e-3)
 
 
-def test_convert_round_trip():
-    mids = {"EURUSD": EU, "GBPUSD": GU, "EURGBP": EG}
+def test_convert_is_generic_over_usd_pairs():
+    mids = {"EURUSD": 1.10, "GBPUSD": 1.27, "AUDUSD": 0.66, "USDJPY": 150.0}
     assert convert(100, "EUR", "USD", mids) == pytest.approx(110.0)
-    assert convert(convert(100, "GBP", "EUR", mids), "EUR", "GBP", mids) == pytest.approx(100.0)
+    assert convert(100, "AUD", "EUR", mids) == pytest.approx(60.0)
+    assert convert(150, "JPY", "USD", mids) == pytest.approx(1.0)
     with pytest.raises(ValueError):
-        convert(1, "JPY", "USD", mids)
+        convert(1, "CHF", "USD", mids)

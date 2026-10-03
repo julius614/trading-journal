@@ -1,4 +1,4 @@
-"""Synthetic triangle data with controlled dislocations."""
+"""Synthetic cointegrated pair data (H1)."""
 from __future__ import annotations
 
 import sys
@@ -11,35 +11,32 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo root
 
+BETA, Y0, X0 = 0.6, 1.10, 1.27
 
-def make_triangle(n_bars: int = 2000, jump_pips: float = 15.0, every: int = 250,
-                  noise_pips: float = 0.15, seed: int = 3,
-                  start: str = "2024-03-04 00:00") -> Dict[str, pd.DataFrame]:
-    """EURUSD and GBPUSD random walks; EURGBP = EURUSD/GBPUSD x exp(s).
 
-    s is tiny noise plus, every `every` bars, a dislocation of `jump_pips` EURGBP pips
-    (alternating sign) that halves for 3 bars and then vanishes.
-    """
+def make_pair(n_bars: int = 3000, swing_pips: float = 40.0, half_life: float = 15.0,
+              x_vol: float = 0.0015, seed: int = 7, start: str = "2024-01-01 00:00",
+              y: str = "EURUSD", x: str = "GBPUSD") -> Dict[str, pd.DataFrame]:
+    """ln(y) = BETA * ln(x) + alpha + s, with s a mean-reverting (OU) spread whose standard
+    deviation is about `swing_pips` y-pips. Hourly bars."""
     rng = np.random.default_rng(seed)
-    idx = pd.date_range(start, periods=n_bars, freq="5min", tz="UTC")
-    eu = 1.10 * np.exp(np.cumsum(rng.normal(0, 2e-4, n_bars)))
-    gu = 1.27 * np.exp(np.cumsum(rng.normal(0, 2e-4, n_bars)))
-    eg_fair = eu / gu
-    s = rng.normal(0, noise_pips * 1e-4 / 0.866, n_bars)
-    sign = 1.0
-    for t in range(every, n_bars - 10, every):
-        d = sign * jump_pips * 1e-4 / 0.866       # pips -> log units at EURGBP ~0.866
-        for k, frac in enumerate((1.0, 0.5, 0.25, 0.125)):
-            s[t + k] += d * frac
-        sign = -sign
-    eg = eg_fair * np.exp(s)
+    idx = pd.date_range(start, periods=n_bars, freq="1h", tz="UTC")
+    lx = np.log(X0) + np.cumsum(rng.normal(0, x_vol, n_bars))
+    phi = 0.5 ** (1 / half_life)
+    sd = swing_pips * 1e-4 / Y0
+    shocks = rng.normal(0, sd * np.sqrt(1 - phi ** 2), n_bars)
+    s = np.zeros(n_bars)
+    for t in range(1, n_bars):
+        s[t] = phi * s[t - 1] + shocks[t]
+    ly = BETA * lx + (np.log(Y0) - BETA * np.log(X0)) + s
 
-    def frame(close: np.ndarray) -> pd.DataFrame:
-        return pd.DataFrame({"open": close, "high": close, "low": close, "close": close}, index=idx)
+    def frame(log_close: np.ndarray) -> pd.DataFrame:
+        c = np.exp(log_close)
+        return pd.DataFrame({"open": c, "high": c, "low": c, "close": c}, index=idx)
 
-    return {"EURUSD": frame(eu), "GBPUSD": frame(gu), "EURGBP": frame(eg)}
+    return {y: frame(ly), x: frame(lx)}
 
 
 @pytest.fixture
-def triangle() -> Dict[str, pd.DataFrame]:
-    return make_triangle()
+def pair() -> Dict[str, pd.DataFrame]:
+    return make_pair()

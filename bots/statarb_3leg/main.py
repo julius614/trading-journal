@@ -1,11 +1,11 @@
-"""Async event loop for the triangular stat-arb bot (paper replay or live MT5).
+"""Async event loop for the 2-leg H1 pairs bot (paper replay or live MT5).
 
-Each loop: clock -> daily reset -> Prop Shield breaker -> new aligned M5 bar(s) ->
-Kalman update -> exit checks for an open basket -> entry checks (news/rollover blackout,
-|Z| > entry, fee gate) -> three-leg order.
+Each loop: clock -> daily reset -> Prop Shield breaker -> new aligned H1 bar(s) ->
+Kalman hedge-ratio update -> exit checks for an open basket -> entry checks (news/rollover
+blackout, |Z| > entry, fee gate) -> two-leg order.
 
-    python -m bots.statarb_3leg.main --live                  # MT5 (demo first!)
-    python -m bots.statarb_3leg.main --paper EURUSD=a.csv GBPUSD=b.csv EURGBP=c.csv
+    python -m bots.statarb_3leg.main --live                      # MT5 (demo first!)
+    python -m bots.statarb_3leg.main --paper EURUSD=a.csv GBPUSD=b.csv
 """
 from __future__ import annotations
 
@@ -24,10 +24,10 @@ import pandas as pd
 from loguru import logger
 
 from .config import AppConfig, load_config
-from .data_fetcher import TriangleFeed
+from .data_fetcher import PairFeed
 from .execution import Basket, Broker, BrokerError, MT5Broker, MultiLegExecutor
 from .fee_gate import evaluate, mids_from_ticks
-from .kalman_statarb import KalmanOutput, LocalLevelKalman, deviation_pips
+from .kalman_statarb import HedgeOutput, KalmanHedgeRatio, spread_pips
 from .risk_manager import NewsCalendar, RiskManager, balance_legs
 
 
@@ -36,6 +36,7 @@ class GateRecord:
     time: pd.Timestamp
     z: float
     direction: int
+    beta: float
     passed: bool
     reason: str
     expected_pips: float
@@ -43,25 +44,26 @@ class GateRecord:
     ratio: float
 
 
-class StatArbBot:
-    """Triangle stat-arb state machine. Broker-agnostic (paper or MT5)."""
+class PairsBot:
+    """Pairs-trading state machine. Broker-agnostic (paper or MT5)."""
 
     def __init__(self, cfg: AppConfig, broker: Broker, news: Optional[NewsCalendar] = None,
                  state_path: Optional[Path] = None) -> None:
         self.cfg = cfg
         self.broker = broker
-        self.feed = TriangleFeed(broker, cfg)
+        self.feed = PairFeed(broker, cfg)
         self.risk = RiskManager(cfg.risk, cfg.filters, news)
         self.executor = MultiLegExecutor(broker, cfg, state_path,
                                          retry_delay=0.5 if isinstance(broker, MT5Broker) else 0.0)
         s = cfg.strategy
-        self.kalman = LocalLevelKalman(s.kalman_q_ratio, s.r_halflife_bars, s.warmup_bars,
+        self.kalman = KalmanHedgeRatio(s.q_beta, s.q_alpha, s.r_halflife_bars, s.warmup_bars,
                                        s.clip_sigma)
         self.last_bar: Optional[pd.Timestamp] = None
-        self.last_output: Optional[KalmanOutput] = None
+        self.last_output: Optional[HedgeOutput] = None
         self.gate_log: List[GateRecord] = []
         self.blocked: Counter = Counter()
-        self.deviation_pips: List[float] = []
+        self.spread_pips: List[float] = []
+        self.betas: List[float] = []
         self._stop = asyncio.Event()
 
     def stop(self) -> None:
@@ -71,10 +73,10 @@ class StatArbBot:
         """Feed recent history to the filter without trading (live start-up)."""
         bars = await self.feed.closed_bars(self.cfg.strategy.history_bars)
         for ts, row in bars.iterrows():
-            self.last_output = self.kalman.update(row["spread"])
+            self.last_output = self.kalman.update(row["log_y"], row["log_x"])
             self.last_bar = ts
-        logger.info("Warm-up: {} bars, filter warm={}, last bar {}", len(bars), self.kalman.warm,
-                    self.last_bar)
+        logger.info("Warm-up: {} bars, filter warm={}, beta={:.3f}, last bar {}", len(bars),
+                    self.kalman.warm, self.kalman.beta, self.last_bar)
 
     async def step(self, now: datetime) -> None:
         equity = await self.broker.account_equity()
@@ -86,16 +88,18 @@ class StatArbBot:
         if self.last_bar is not None:
             bars = bars[bars.index > self.last_bar]
         for ts, row in bars.iterrows():
-            out = self.kalman.update(row["spread"])
+            out = self.kalman.update(row["log_y"], row["log_x"])
             self.last_bar, self.last_output = ts, out
             await self.on_bar(ts, row, out, now)
 
-    async def on_bar(self, ts: pd.Timestamp, row: pd.Series, out: KalmanOutput,
+    async def on_bar(self, ts: pd.Timestamp, row: pd.Series, out: HedgeOutput,
                      now: datetime) -> None:
         s = self.cfg.strategy
+        y, x = self.cfg.y, self.cfg.x
         z = out.z
         if out.warm:
-            self.deviation_pips.append(deviation_pips(out.deviation, row["EURGBP"]))
+            self.spread_pips.append(spread_pips(out.spread, row[y]))
+            self.betas.append(out.beta)
         b = self.executor.basket
         if b is not None:
             b.bars_held += 1
@@ -105,7 +109,7 @@ class StatArbBot:
             return
         if not out.warm or not math.isfinite(z) or abs(z) < s.entry_z:
             return
-        direction = 1 if z < 0 else -1          # Z < -2: spread cheap -> long spread
+        direction = 1 if z < 0 else -1          # Z < -2: y cheap vs x -> long spread
         blocked, why = self.risk.entry_block(now)
         if blocked:
             self.blocked[why.split(":")[0]] += 1
@@ -114,23 +118,24 @@ class StatArbBot:
         ticks = await self.feed.ticks()
         mids = mids_from_ticks(ticks)
         infos = {sym: await self.broker.symbol_info(self.cfg.broker_symbol(sym))
-                 for sym in ("EURUSD", "GBPUSD", "EURGBP")}
+                 for sym in self.cfg.pair}
         equity = await self.broker.account_equity()
-        plans = balance_legs(direction, equity, mids, infos, self.cfg.risk)
+        plans = balance_legs(direction, equity, mids, infos, self.cfg.risk, y, x, out.beta)
         lots = {p.symbol: p.lots for p in plans} or None
-        gate = evaluate(out.deviation, ticks, self.cfg.filters, self.cfg.risk.account_currency, lots)
-        self.gate_log.append(GateRecord(ts, z, direction, gate.passed and bool(plans), gate.reason,
-                                        gate.expected_reversion_pips, gate.total_cost_pips,
-                                        gate.ratio))
+        gate = evaluate(out.spread, ticks, self.cfg.filters, y, x, out.beta,
+                        self.cfg.risk.account_currency, lots)
+        self.gate_log.append(GateRecord(ts, z, direction, out.beta, gate.passed and bool(plans),
+                                        gate.reason, gate.expected_reversion_pips,
+                                        gate.total_cost_pips, gate.ratio))
         if not plans:
             logger.warning("Signal z={:+.2f}: equity too small for minimum lots", z)
             return
         if not gate.passed:
-            logger.info("Signal z={:+.2f} at {} rejected by fee gate: {} (edge {:.2f} vs cost "
-                        "{:.2f} pips)", z, ts, gate.reason, gate.expected_reversion_pips,
+            logger.info("Signal z={:+.2f} at {} rejected by fee gate: {} (edge {:.1f} vs cost "
+                        "{:.1f} pips)", z, ts, gate.reason, gate.expected_reversion_pips,
                         gate.total_cost_pips)
             return
-        await self.executor.open_basket(plans, direction, z, gate, now)
+        await self.executor.open_basket(plans, direction, z, gate, now, out.beta)
 
     def _exit_reason(self, b: Basket, z: float) -> Optional[str]:
         s = self.cfg.strategy
@@ -141,8 +146,7 @@ class StatArbBot:
         if (b.direction == 1 and z >= -s.exit_z) or (b.direction == -1 and z <= s.exit_z):
             return "reverted"
         if s.stop_z_extra is not None:
-            # relative to entry: a big dislocation entered at Z=17 that falls to 6 is
-            # reverting, not failing; stop only if it widens past |entry Z| + extra
+            # entry-relative stop: long at Z_entry stops at Z_entry - extra; short at + extra
             limit = abs(b.entry_z) + s.stop_z_extra
             if (b.direction == 1 and z <= -limit) or (b.direction == -1 and z >= limit):
                 return "stop z"
@@ -168,6 +172,10 @@ class StatArbBot:
             logger.info("Bot stopped")
 
 
+# Backwards-compatible name for code that imported the 3-leg bot class.
+StatArbBot = PairsBot
+
+
 def setup_logging(log_dir: str, level: str = "INFO") -> None:
     Path(log_dir).mkdir(parents=True, exist_ok=True)
     logger.remove()
@@ -177,10 +185,7 @@ def setup_logging(log_dir: str, level: str = "INFO") -> None:
 
 
 def load_news(cfg: AppConfig, live: bool) -> NewsCalendar:
-    if cfg.news_csv:
-        cal = NewsCalendar.from_csv(cfg.news_csv)
-    else:
-        cal = NewsCalendar()
+    cal = NewsCalendar.from_csv(cfg.news_csv) if cfg.news_csv else NewsCalendar()
     if live and cfg.require_news_calendar:
         last = cal.last_event_time()
         if last is None or last < datetime.now(timezone.utc):
@@ -190,10 +195,10 @@ def load_news(cfg: AppConfig, live: bool) -> NewsCalendar:
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="EURUSD/GBPUSD/EURGBP stat-arb bot")
+    p = argparse.ArgumentParser(description="2-leg H1 pairs-trading bot")
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--live", action="store_true", help="trade through MetaTrader 5")
-    mode.add_argument("--paper", nargs=3, metavar="SYMBOL=CSV", help="replay three M5 CSVs")
+    mode.add_argument("--paper", nargs=2, metavar="SYMBOL=CSV", help="replay two H1 CSVs")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args(argv)
 
@@ -206,8 +211,8 @@ async def _amain(args: argparse.Namespace) -> None:
         await run_replay(cfg, dict(x.split("=", 1) for x in args.paper),
                          news=load_news(cfg, live=False))
         return
-    bot = StatArbBot(cfg, MT5Broker(cfg.broker), load_news(cfg, live=True),
-                     Path(cfg.data_dir) / "basket_state.json")
+    bot = PairsBot(cfg, MT5Broker(cfg.broker), load_news(cfg, live=True),
+                   Path(cfg.data_dir) / "basket_state.json")
     loop = asyncio.get_running_loop()
     for name in ("SIGINT", "SIGTERM"):
         try:

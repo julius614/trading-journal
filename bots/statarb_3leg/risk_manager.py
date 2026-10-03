@@ -1,4 +1,4 @@
-"""Dollar-neutral 3-leg sizing, the daily-loss circuit breaker, and entry blackouts
+"""Beta-weighted 2-leg sizing, the daily-loss circuit breaker, and entry blackouts
 (news calendar and rollover)."""
 from __future__ import annotations
 
@@ -18,10 +18,6 @@ from .config import CONTRACT_SIZE, FilterConfig, RiskConfig
 from .fee_gate import base_ccy, convert, quote_ccy
 
 NEW_YORK = ZoneInfo("America/New_York")
-
-# Leg directions for a LONG spread (buy EURGBP, sell EURUSD, buy GBPUSD); short = negated.
-LONG_SPREAD_SIDES: Dict[str, int] = {"EURGBP": 1, "EURUSD": -1, "GBPUSD": 1}
-
 
 @dataclass(frozen=True)
 class LegPlan:
@@ -44,40 +40,46 @@ def balance_legs(
     mids: Mapping[str, float],
     infos: Mapping[str, SymbolInfo],
     risk: RiskConfig,
+    y: str,
+    x: str,
+    beta: float,
 ) -> List[LegPlan]:
-    """Lot sizes for a dollar-neutral triangle book.
+    """Lot sizes for a beta-weighted pair book.
 
-    EUR notional of the EURGBP and EURUSD legs = notional_equity_mult x equity (converted
-    to EUR). EURGBP and EURUSD trade the same N lots, so EUR exposure cancels exactly;
-    GBPUSD trades N x EURGBP lots, so GBP cancels (to lot rounding), and USD is left with
-    N x 100k x (EURUSD - EURGBP x GBPUSD), i.e. the spread itself - near zero.
-    Returns [] if N rounds below the minimum lot.
+    Long spread (direction +1) = BUY y, SELL beta x of x (BUY x if beta < 0); short spread is
+    the mirror. The y-leg notional is notional_equity_mult x equity; the x-leg notional is
+    |beta| x that (both valued in USD), so P&L tracks the spread y - beta x.
+    Returns [] if either leg rounds below its minimum lot.
     """
     if direction not in (1, -1):
         raise ValueError("direction must be +1 (long spread) or -1 (short spread)")
     if equity <= 0:
         raise ValueError("equity must be positive")
-    eur_notional = convert(equity * risk.notional_equity_mult, risk.account_currency, "EUR", mids)
-    step = max(infos["EURGBP"].volume_step, infos["EURUSD"].volume_step)
-    n = min(_floor_step(eur_notional / CONTRACT_SIZE, step), risk.max_lots_per_leg)
-    if n < max(infos["EURGBP"].volume_min, infos["EURUSD"].volume_min):
+    if not math.isfinite(beta) or beta == 0:
+        raise ValueError("hedge ratio must be finite and non-zero")
+    notional = convert(equity * risk.notional_equity_mult, risk.account_currency,
+                       quote_ccy(y), mids)
+    n_y = min(_floor_step(notional / (CONTRACT_SIZE * mids[y]), infos[y].volume_step),
+              risk.max_lots_per_leg)
+    if n_y < infos[y].volume_min:
         return []
-    m = min(_round_step(n * mids["EURGBP"], infos["GBPUSD"].volume_step), risk.max_lots_per_leg)
-    if m < infos["GBPUSD"].volume_min:
+    n_x = min(_round_step(n_y * abs(beta) * mids[y] / mids[x], infos[x].volume_step),
+              risk.max_lots_per_leg)
+    if n_x < infos[x].volume_min:
         return []
-    lots = {"EURGBP": n, "EURUSD": n, "GBPUSD": m}
-    return [LegPlan(s, direction * LONG_SPREAD_SIDES[s], lots[s])
-            for s in ("EURGBP", "EURUSD", "GBPUSD")]
+    x_side = -direction if beta > 0 else direction
+    return [LegPlan(y, direction, n_y), LegPlan(x, x_side, n_x)]
 
 
 def currency_exposure(plans: Sequence[LegPlan], mids: Mapping[str, float],
                       account_ccy: str = "USD") -> Dict[str, float]:
-    """Net exposure per currency, expressed in the account currency."""
-    exp: Dict[str, float] = {"USD": 0.0, "EUR": 0.0, "GBP": 0.0}
+    """Net exposure per currency, in the account currency. A pairs book is deliberately
+    long one currency and short another; this shows how much."""
+    exp: Dict[str, float] = {}
     for p in plans:
         units = p.side * p.lots * CONTRACT_SIZE
-        exp[base_ccy(p.symbol)] += units
-        exp[quote_ccy(p.symbol)] -= units * mids[p.symbol]
+        exp[base_ccy(p.symbol)] = exp.get(base_ccy(p.symbol), 0.0) + units
+        exp[quote_ccy(p.symbol)] = exp.get(quote_ccy(p.symbol), 0.0) - units * mids[p.symbol]
     return {c: convert(v, c, account_ccy, mids) for c, v in exp.items()}
 
 
