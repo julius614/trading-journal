@@ -34,6 +34,7 @@ PHASE 2 (kept combinations only): each parameter moved ~25% (strategies.PERTURBA
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from concurrent.futures import ProcessPoolExecutor
 from typing import Dict, List, Optional, Tuple
 
@@ -43,7 +44,7 @@ import pandas as pd
 from ...statarb_3leg.portfolio import bootstrap_paths, challenge_odds
 from .data import available_symbols, load_symbol
 from .engine import run, stats
-from .sessions import SessionData, build_sessions, market_of
+from .sessions import SessionData, build_sessions, hour_of_week_utc, market_of
 from .strategies import PERTURBATIONS, STRATEGIES, Params
 
 PERIODS = ("discovery", "validate", "holdout")
@@ -81,18 +82,48 @@ def period_of(dates: pd.Series, cut1: pd.Timestamp, cut2: pd.Timestamp) -> pd.Se
                               np.where(dates < cut2, "validate", "holdout")), index=dates.index)
 
 
-def _sessions(data_dir: str, symbol: str) -> SessionData:
+@dataclass(frozen=True)
+class CostScenario:
+    """Post-hoc cost scenarios (the pre-declared race is cost_mult 1, own spreads)."""
+    cost_mult: float = 1.0
+    spread_dir: Optional[str] = None             # another broker's M5 files
+    spread_map: Tuple[Tuple[str, str], ...] = ()  # our symbol -> that broker's symbol
+
+    @property
+    def is_base(self) -> bool:
+        return self.cost_mult == 1.0 and self.spread_dir is None
+
+
+BASE = CostScenario()
+
+
+def other_broker_spread(sd: SessionData, spread_dir: str, other_symbol: str) -> np.ndarray:
+    """Another broker's median spread (price units) for each UTC hour of the week,
+    mapped onto this market's session bars."""
+    other, _ = load_symbol(spread_dir, other_symbol)
+    how = other.index.dayofweek * 24 + other.index.hour
+    prof = other["spread_price"].groupby(how).median().reindex(range(168))
+    prof = prof.fillna(float(other["spread_price"].median())).to_numpy()
+    return prof[hour_of_week_utc(sd)]
+
+
+def _sessions(data_dir: str, symbol: str, scen: CostScenario = BASE) -> SessionData:
     df, _ = load_symbol(data_dir, symbol)
-    return build_sessions(df, symbol, market_of(symbol))
+    sd = build_sessions(df, symbol, market_of(symbol))
+    if scen.spread_dir:
+        other = dict(scen.spread_map).get(symbol, symbol)
+        sd.spread = other_broker_spread(sd, scen.spread_dir, other)
+    return sd
 
 
 def _run_symbol(args) -> Dict[str, object]:
-    data_dir, symbol = args
-    sd = _sessions(data_dir, symbol)
+    data_dir, symbol, scen = args if len(args) == 3 else (*args, BASE)
+    sd = _sessions(data_dir, symbol, scen)
     out = {"symbol": symbol, "dates": [pd.Timestamp(d) for d in sd.dates], "runs": {}}
     for name in candidates(symbol):
         f = STRATEGIES[name]
-        out["runs"][name] = {"base": run(sd, f), "slip2": run(sd, f, slip_mult=2.0)}
+        out["runs"][name] = {"base": run(sd, f, cost_mult=scen.cost_mult),
+                             "slip2": run(sd, f, slip_mult=2.0, cost_mult=scen.cost_mult)}
     return out
 
 
@@ -168,13 +199,14 @@ def concentration(combo_daily: pd.DataFrame) -> Tuple[float, float]:
     return float(by_year.max() / total), float(by_symbol.max() / total)
 
 
-def plateau(data_dir: str, kept: List[str], cut2: pd.Timestamp) -> pd.DataFrame:
+def plateau(data_dir: str, kept: List[str], cut2: pd.Timestamp,
+            scen: CostScenario = BASE) -> pd.DataFrame:
     rows = []
     for combo in kept:
         name, symbol = combo.split(":", 1)
-        sd = _sessions(data_dir, symbol)
+        sd = _sessions(data_dir, symbol, scen)
         for p in PERTURBATIONS[name]:
-            t = run(sd, STRATEGIES[name], p)
+            t = run(sd, STRATEGIES[name], p, cost_mult=scen.cost_mult)
             t = t[t["date"] < cut2] if len(t) else t
             changed = {k: v for k, v in vars(p).items() if v != getattr(Params(), k)}
             rows.append({"combo": combo, "variant": str(changed), **stats(t)})
@@ -186,13 +218,26 @@ def main(argv: Optional[List[str]] = None) -> None:
     ap.add_argument("--data-dir", default="data/intraday")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--out", help="write the combination table to CSV")
+    ap.add_argument("--cost-mult", type=float, default=1.0,
+                    help="POST-HOC scenario: scale all costs (e.g. 0.5 = half the costs)")
+    ap.add_argument("--spread-from", metavar="DIR",
+                    help="POST-HOC scenario: use another broker's spreads (its M5 files)")
+    ap.add_argument("--spread-map", default="",
+                    help="our=theirs symbol names, e.g. US500=US500.cash,USTECH100M=US100.cash")
     a = ap.parse_args(argv)
+    smap = tuple(tuple(x.split("=", 1)) for x in a.spread_map.split(",") if "=" in x)
+    scen = CostScenario(a.cost_mult, a.spread_from, smap)
+    if not scen.is_base:
+        print(f"\n*** COST SCENARIO x{scen.cost_mult:g}"
+              + (f", spreads from {scen.spread_from}" if scen.spread_dir else "")
+              + " - POST-HOC: this price data was already seen; a pass here is conditional "
+                "and needs the real broker's spreads plus a forward demo ***")
 
     symbols = available_symbols(a.data_dir)
     if not symbols:
         raise SystemExit(f"no <SYMBOL>_M5.csv + <SYMBOL>_spec.json pairs in {a.data_dir}")
     with ProcessPoolExecutor(a.workers) as pool:
-        results = list(pool.map(_run_symbol, [(a.data_dir, s) for s in symbols]))
+        results = list(pool.map(_run_symbol, [(a.data_dir, s, scen) for s in symbols]))
     all_dates = [d for r in results for d in r["dates"]]
     cut1, cut2 = split_dates(all_dates)
     print(f"\nSymbols: {symbols}")
@@ -247,7 +292,7 @@ def main(argv: Optional[List[str]] = None) -> None:
               f"hard stop {row.p_pass_3m_hard4:.0%}")
     print(f"\nVERDICT: {'STRONG - meets every pre-declared test' if strong else 'NOT strong enough'}")
 
-    pl = plateau(a.data_dir, kept, cut2)
+    pl = plateau(a.data_dir, kept, cut2, scen)
     with pd.option_context("display.width", 200, "display.max_rows", None):
         print("\n== Phase 2 plateau check (discovery + validate, check only) ==")
         print(pl.to_string(index=False))

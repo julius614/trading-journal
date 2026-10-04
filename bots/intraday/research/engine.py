@@ -24,8 +24,9 @@ def commission_for(market: str) -> float:
 
 
 def trades_frame(sd: SessionData, trades: List[Trade], slip_mult: float = 1.0,
-                 commission: Optional[float] = None) -> pd.DataFrame:
-    """One row per trade with date, side, leverage and net return (fraction of equity)."""
+                 commission: Optional[float] = None, cost_mult: float = 1.0) -> pd.DataFrame:
+    """One row per trade with date, side, leverage and net return (fraction of equity).
+    cost_mult scales every cost (spread, slippage, commission) for cost scenarios."""
     cols = ["date", "side", "entry", "exit", "leverage", "gross", "cost", "ret", "reason"]
     if not trades:
         return pd.DataFrame(columns=cols)
@@ -34,7 +35,7 @@ def trades_frame(sd: SessionData, trades: List[Trade], slip_mult: float = 1.0,
     rows = []
     for t in trades:
         spread = 0.5 * (sd.spread[t.day, t.entry_slot] + sd.spread[t.day, t.exit_slot])
-        cost = (spread + slip_mult * med) / t.entry + comm
+        cost = cost_mult * ((spread + slip_mult * med) / t.entry + comm)
         gross = t.side * (t.exit - t.entry) / t.entry
         rows.append((pd.Timestamp(sd.dates[t.day]), t.side, t.entry, t.exit, t.leverage,
                      gross * t.leverage, cost * t.leverage, (gross - cost) * t.leverage,
@@ -43,8 +44,8 @@ def trades_frame(sd: SessionData, trades: List[Trade], slip_mult: float = 1.0,
 
 
 def run(sd: SessionData, strategy: Callable[[SessionData, Params], List[Trade]],
-        params: Params = DEFAULT, slip_mult: float = 1.0) -> pd.DataFrame:
-    return trades_frame(sd, strategy(sd, params), slip_mult)
+        params: Params = DEFAULT, slip_mult: float = 1.0, cost_mult: float = 1.0) -> pd.DataFrame:
+    return trades_frame(sd, strategy(sd, params), slip_mult, cost_mult=cost_mult)
 
 
 def daily_returns(trades: pd.DataFrame) -> pd.Series:

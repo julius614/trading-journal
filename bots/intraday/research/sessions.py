@@ -114,3 +114,16 @@ def session_bounds_utc(d: date, market: str) -> Tuple[datetime, datetime]:
     z = ZoneInfo(tz)
     return (datetime.combine(d, t_open, z).astimezone(ZoneInfo("UTC")),
             datetime.combine(d, t_close, z).astimezone(ZoneInfo("UTC")))
+
+
+def hour_of_week_utc(sd: SessionData) -> np.ndarray:
+    """(n_days, n_bars) UTC hour of the week (Monday 00:00 = 0 .. 167) of every bar."""
+    tz, t_open, _ = MARKETS[sd.market]
+    z = ZoneInfo(tz)
+    offs = np.arange(sd.n_bars) * sd.bar_minutes
+    out = np.empty((len(sd), sd.n_bars), dtype=int)
+    for i, d in enumerate(sd.dates):
+        start = pd.Timestamp(datetime.combine(d, t_open, z)).tz_convert("UTC")
+        times = start + pd.to_timedelta(offs, unit="min")
+        out[i] = times.dayofweek * 24 + times.hour
+    return out

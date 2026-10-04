@@ -15,6 +15,7 @@ pre-declared "strong" test.
 | `research/data.py` | Loads `<SYMBOL>_M5.csv` and `<SYMBOL>_spec.json`; MT5 spread to price |
 | `research/strategies.py` | NA (noise area), LH (late half hour), OR (5-min opening range), SW (liquidity sweep + FVG), BK (M15 Donchian breakout); fixed parameters |
 | `research/engine.py` | Costs (spread, slippage, FX commission) and statistics |
+| `research/costs.py` | Post-hoc break-even costs per strategy × market |
 | `research/protocol.py` | The pre-declared race: split, join/keep rules, portfolio, challenge odds, plateau check |
 | `research/tests/` | Synthetic-data tests: sessions, each rule, no look-ahead, costs, protocol rules |
 
@@ -78,6 +79,15 @@ I then run the race once and report the verdict:
 ```powershell
 python -m bots.intraday.research.protocol --data-dir data/intraday_duka
 ```
+
+## Cost scenarios (post-hoc diagnostics only)
+```powershell
+python -m bots.intraday.research.costs --data-dir data/intraday_hd
+python -m bots.intraday.research.protocol --data-dir data/intraday_hd --cost-mult 0.5
+python -m bots.intraday.research.protocol --data-dir data/intraday_hd --spread-from data/intraday_ftmo --spread-map US500=US500.cash
+```
+`--spread-from` swaps in another broker's spreads (from its own MT5 M5 files, by UTC hour
+of the week). Results are flagged as post-hoc.
 
 ## Tests
 ```powershell

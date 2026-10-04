@@ -6,7 +6,7 @@
   - intraday only (no overnight or weekend risk, so it fits any prop account);
   - FX + gold + indices + oil.
 - **Code:** [`bots/intraday/research/`](../../../bots/intraday/research/).
-- **Status (2026-10-05):** run once on 2019–2026 data. **No strategy passed** (section 4); costs exceed the small gross edges.
+- **Status (2026-10-05):** run once on 2019–2026 data. **No strategy passed** (section 4). Even at ¼ of the costs nothing is strong, and the index edge failed in the 2025–26 hold-out (section 5).
 
 ## 1. Why these three candidates
 All three are documented in peer-reviewed or widely replicated research. Each has a
@@ -193,6 +193,51 @@ versus cost (diagnostic only, not part of the verdict):
 - or fewer, larger trades (e.g. the noise-area idea on a longer check interval).
 
 Either would be a new hypothesis, not a re-tune of this one.
+
+## 5. Cost sensitivity (post-hoc, 2026-10-05)
+This was run at the user's request after the main race. The price data had already been
+seen, so these results are **conditional diagnostics, not a pass/fail test.**
+
+**Break-even costs** (`python -m bots.intraday.research.costs`):
+- k* is the fraction of today's costs (broker spread + slippage) at which a strategy nets
+  zero over 2019–2026.
+- "RT bp" is the round-trip cost per trade in basis points.
+
+| Combo | Gross PF | k* (whole) | k* (discovery) | Today's RT bp | Break-even RT bp |
+|---|---|---|---|---|---|
+| NA:US500 | 1.14 | 1.13 | 1.66 | 1.42 | 1.61 |
+| NA:XAUUSD | 1.08 | 0.95 | 0.46 | 0.80 | 0.75 |
+| NA:USTECH100M | 1.23 | 0.91 | 0.92 | 3.59 | 3.25 |
+| LH:XAUUSD | 1.24 | 0.87 | 0.58 | 0.90 | 0.78 |
+| OR:XAUUSD | 1.05 | 0.76 | 0.81 | 0.74 | 0.56 |
+| BK:US500 | 1.08 | 0.62 | 0.68 | 1.47 | 0.90 |
+| FX (all NA/BK) | 0.86–0.98 | < 0 | | | |
+
+The full table is in `breakeven-2026-10-05.csv`.
+
+**The race re-run with all costs ×0.5 and ×0.25** (same rules):
+
+| Combo | Cost | Discovery PF | Validate PF | Hold-out PF (2025-03 → 2026-10) |
+|---|---|---|---|---|
+| NA:US500 | ×0.5 | 1.17 | 1.19 | **0.76** |
+| NA:US500 | ×0.25 | 1.21 | 1.23 | **0.78** |
+| NA:USTECH100M | ×0.25 | 1.20 | 1.23 | **0.95** |
+| LH:XAUUSD | ×0.25 | 1.10 | 1.13 | 1.45 |
+| OR:XAUUSD | ×0.25 | 1.05 | 1.17 | 0.92 |
+
+- **×0.5:** only NA:US500 joins and is kept. As a portfolio over validate + hold-out it
+  returns −3.2%, with −15.1% in the hold-out alone and a max drawdown of −16.9%. Not strong.
+- **×0.25:** NA:US500 and NA:USTECH100M are kept. Together they return +5.5% over
+  validate + hold-out, but −8.1% in the hold-out. P(+10% within 12 months) is 1%. Not
+  strong.
+
+**Conclusion:**
+- Lower costs **don't rescue** these strategies.
+- The index momentum edge (noise-area) was real from 2019 to early 2025, but **it
+  stopped working in 2025–26 even at a quarter of the cost.** That looks like an edge that
+  faded, possibly crowded after the 2024 paper, not a cost problem.
+- So testing FTMO's real spreads (step C in the plan) would not change the verdict and
+  isn't worth the effort for these rules.
 
 ## Self-check questions
 1. Why is "strong" defined on validate + hold-out only, not on the full history?
