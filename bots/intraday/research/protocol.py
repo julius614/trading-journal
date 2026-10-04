@@ -7,6 +7,9 @@ Candidates (parameters fixed from the papers, see strategies.py):
     NA  noise-area momentum      every downloaded symbol (indices, gold, oil, FX)
     LH  late-half-hour momentum  symbols on the US session (US indices, gold, oil)
     OR  5-min opening range      every non-FX symbol
+Added 2026-10-04, before any data was seen (the user's two "passing" strategies):
+    SW  liquidity sweep + FVG    FX (London open) and US indices + gold (NY AM)
+    BK  M15 Donchian breakout    every symbol
 All trades are flat by the session close. Costs: per-bar MT5 spread + slippage of half the
 median spread per side; FX also pays 0.00007 commission per round trip.
 
@@ -22,6 +25,8 @@ STRONG (all required, measured on validate + hold-out days only):
     - at the largest scale with P(any day <= -5%) < 2% and P(fail) <= 15%,
       P(reach +10% within 12 months) >= 50%  (bootstrap as in statarb_3leg.portfolio)
     - no single calendar year and no single symbol earns more than 50% of the profit.
+REPORT ONLY (does not change the verdict): P(+10% within 63 trading days ~ 3 months) per
+    scale, with the normal limits and with the user's -4% hard stop.
 PHASE 2 (kept combinations only): each parameter moved ~25% (strategies.PERTURBATIONS);
     the plateau holds if every variant still has PF > 1 on discovery + validate. It is a
     check only - parameters are never re-chosen from it.
@@ -48,6 +53,10 @@ MAX_SHARE = 0.50
 SCALES = tuple(np.round(np.arange(0.25, 8.01, 0.25), 2))
 
 
+def is_oil(symbol: str) -> bool:
+    return any(k in symbol.upper() for k in ("OIL", "WTI", "XTI", "BRENT", "XBR"))
+
+
 def candidates(symbol: str) -> List[str]:
     m = market_of(symbol)
     out = ["NA"]
@@ -55,6 +64,9 @@ def candidates(symbol: str) -> List[str]:
         out.append("LH")
     if m != "FX":
         out.append("OR")
+    if m == "FX" or (m == "US" and not is_oil(symbol)):
+        out.append("SW")               # FX at London open; US indices and gold at NY AM
+    out.append("BK")
     return out
 
 
@@ -123,9 +135,20 @@ def portfolio_daily(results: List[Dict[str, object]], kept: List[str]) -> pd.Dat
     return pd.DataFrame(cols).fillna(0.0).sort_index()
 
 
+THREE_MONTHS = 63          # trading days
+HARD_STOP = 0.04           # the user's "stop trading at -4% total"
+
+
 def odds(daily: np.ndarray, n_paths: int = 10_000, seed: int = 11) -> pd.DataFrame:
     paths = bootstrap_paths(daily, n_paths, 3 * 252, 5, np.random.default_rng(seed))
-    return pd.DataFrame([challenge_odds(paths, s) for s in SCALES])
+    rows = []
+    for s in SCALES:
+        row = challenge_odds(paths, s)
+        short = paths[:, :THREE_MONTHS]
+        row["p_pass_3m"] = challenge_odds(short, s)["p_pass"]
+        row["p_pass_3m_hard4"] = challenge_odds(short, s, max_loss=HARD_STOP)["p_pass"]
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def best_scale(table: pd.DataFrame) -> Optional[float]:
@@ -220,6 +243,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         print(f"\nScale {scale:g}x: P(pass) {row.p_pass:.0%}, within 12 months "
               f"{row.p_pass_12m:.0%}, P(fail) {row.p_fail:.0%}, median "
               f"{row.median_months_to_pass:.1f} months")
+        print(f"  3-month view: P(+10% within 3 months) {row.p_pass_3m:.0%}; with the -4% "
+              f"hard stop {row.p_pass_3m_hard4:.0%}")
     print(f"\nVERDICT: {'STRONG - meets every pre-declared test' if strong else 'NOT strong enough'}")
 
     pl = plateau(a.data_dir, kept, cut2)

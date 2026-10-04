@@ -19,6 +19,38 @@ so there is nothing to curve-fit.
 | **LH** | The return from the previous close to 30 minutes after the open predicts the last 30 minutes | Gao, Han, Li & Zhou (2018, *Journal of Financial Economics*); Baltussen, Da, Lammers & Martens (2021, *JFE*): 60+ futures | Late-day hedging flows and slow-reacting traders |
 | **OR** | Direction of the first 5-minute candle; stop 10% of ATR, target 10R | Zarattini, Barbon & Aziz (2023), *Can Day Trading Really Be Profitable?* | The control. Our earlier ORB note found it thin (≈0 after costs), so it must earn its place again |
 
+### Added 2026-10-04 (before any data): the user's two "passing" strategies
+Both follow the user's "passing box": they risk 0.5% at the stop, take at most 2 trades
+a day per market (so trading stops after 2 losses), and are flat at the close.
+
+| ID | Idea | Exact rules | Markets |
+|---|---|---|---|
+| **SW** | ICT/SMC liquidity sweep + displacement + fair-value gap ("Option A") | See below | FX (08:00–11:00 London); US indices and gold (09:30–11:00 New York) |
+| **BK** | Volatility breakout with a trailing stop ("Option B") | See below | All |
+
+**SW rules:**
+- **Sweep:** inside the window, price trades beyond the previous session's high or low,
+  then closes back inside within 3 bars.
+- **Displacement:** within 3 more bars, a candle with a body ≥ 1.5× the 20-bar average
+  moves away from the level and leaves a 3-bar fair-value gap.
+- **Entry:** a limit order at the gap's midpoint, valid for 6 bars.
+- **Exits:** stop beyond the sweep's extreme, target 2.5R, otherwise flat at the close.
+
+**BK rules:**
+- **Entry:** an M15 close beyond the 20-bar Donchian high or low (chained across days).
+  Fill at the next M5 open.
+- **Stop:** 1.5 × ATR(14). After +1R, it trails at the best close ∓ 2 × ATR and only
+  ever tightens.
+- **Exit:** flat at the close if not stopped.
+
+**Plateau variants:**
+- SW: displacement 1.125/1.875, target 1.875R/3.125R.
+- BK: Donchian 15/25, stop 1.125/1.875 ATR.
+
+**Note:** SW is a rare setup (on random-walk test data, about 10 trades a year per
+market). If it has fewer than 150 discovery trades, the verdict is "not enough
+evidence", not "proven bad".
+
 ## 2. Protocol (fixed before seeing data)
 - **Sessions** (local time, DST handled automatically):
   - US indices, gold and oil: 09:30–16:00 New York.
@@ -63,6 +95,23 @@ so there is nothing to curve-fit.
 - **Unchanged:** the rules, parameters and pass/fail thresholds.
 - **New risk:** Dukascopy's index CFDs and your broker's can differ slightly at the open.
   The hold-out period can be re-checked on the broker's own 1.5 years.
+
+### Review of the user's two-phase proposal (pass with A/B, then switch to stat-arb)
+1. **The claimed results are assumptions, not evidence.**
+   - Claimed: win rates of 45–52% at 1:2.5 and 38–45% at 1:3.
+   - Breakeven before costs is about 33% at 1:2 and about 29% at 1:2.5.
+   - "+10% from 40 trades at 50%" only holds if the 50% is real. The race measures it.
+2. **Option A was partly tested already.** The AMD bot (London-open sweep of the Asian
+   range, EURUSD/GBPUSD) had no edge after costs. The FVG entry and the index markets are
+   new.
+3. **"StatArb funded = 1.5–3% a month" is not what we measured.** Our AUD/NZD bot made
+   about 0.1% a month at 1×, or about 0.2% at the safe 2×.
+4. **Switching strategy after passing breaks FundedNext's rules.** They require the same
+   strategy from challenge to funded, and EAs "designed to pass challenges" are
+   prohibited. It's risky at any firm, so the bot that passes should be the bot that
+   trades funded.
+5. **The passing box is sound** and is built into SW and BK: 0.5% risk, 2 trades/losses a
+   day, and a −4% hard stop. The −4% stop is reported as a 3-month pass probability.
 
 ## 3. How this test could still lie
 - **History length:**

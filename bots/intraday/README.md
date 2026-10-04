@@ -1,6 +1,6 @@
 # Intraday strategy research (M5, flat every night)
 
-This tests three published intraday strategies on your broker's data, with fixed rules
+This tests five intraday strategies (three published, two the user proposed) on your broker's data, with fixed rules
 decided in advance. The rationale and protocol are in
 [`knowledge-base/strategies/intraday-momentum/README.md`](../../knowledge-base/strategies/intraday-momentum/README.md).
 
@@ -12,7 +12,7 @@ pre-declared "strong" test.
 | `research/sessions.py` | Market sessions (New York / Frankfurt / London, DST-aware), M5 bars into days |
 | `research/dukascopy.py` | Long M5 history from Dukascopy, broker spreads attached |
 | `research/data.py` | Loads `<SYMBOL>_M5.csv` and `<SYMBOL>_spec.json`; MT5 spread to price |
-| `research/strategies.py` | NA (noise area), LH (late half hour), OR (5-min opening range); fixed parameters |
+| `research/strategies.py` | NA (noise area), LH (late half hour), OR (5-min opening range), SW (liquidity sweep + FVG), BK (M15 Donchian breakout); fixed parameters |
 | `research/engine.py` | Costs (spread, slippage, FX commission) and statistics |
 | `research/protocol.py` | The pre-declared race: split, join/keep rules, portfolio, challenge odds, plateau check |
 | `research/tests/` | Synthetic-data tests: sessions, each rule, no look-ahead, costs, protocol rules |

@@ -176,9 +176,10 @@ def test_stats():
 
 # ---------------------------------------------------------------- protocol
 def test_candidates_by_market():
-    assert candidates("US500") == ["NA", "LH", "OR"]
-    assert candidates("GER40") == ["NA", "OR"]
-    assert candidates("EURUSD") == ["NA"]
+    assert candidates("US500") == ["NA", "LH", "OR", "SW", "BK"]
+    assert candidates("GER40") == ["NA", "OR", "BK"]
+    assert candidates("EURUSD") == ["NA", "SW", "BK"]
+    assert candidates("WTI") == ["NA", "LH", "OR", "BK"]
 
 
 def test_split_and_periods():
@@ -216,3 +217,87 @@ def test_loader_reads_gzip_and_converts_spread(tmp_path):
     assert available_symbols(tmp_path) == ["US500"]
     df, spec = load_symbol(tmp_path, "US500")
     assert len(df) == 3 and df["spread_price"].iloc[0] == pytest.approx(0.25)
+
+
+# ---------------------------------------------------------------- SW / BK (user's options)
+from bots.intraday.research.strategies import (_manage, donchian_breakout,  # noqa: E402
+                                               liquidity_sweep)
+
+
+def _sw_days():
+    n = 78
+    o = np.full((2, n), 100.0)
+    c = np.full((2, n), 100.02)
+    h = np.full((2, n), 100.1)
+    lo = np.full((2, n), 99.95)
+    h[0, 10], lo[0, 20] = 101.0, 99.0                         # previous day's high / low
+    o[1, 2], h[1, 2], lo[1, 2], c[1, 2] = 100.9, 101.5, 100.6, 100.8   # sweep + reclaim
+    o[1, 4], h[1, 4], lo[1, 4], c[1, 4] = 100.5, 100.5, 99.7, 99.8     # displacement, FVG
+    return o, h, lo, c
+
+
+def test_sweep_fvg_short_hits_target():
+    o, h, lo, c = _sw_days()
+    h[1, 6] = 100.6                                            # retrace into the gap
+    lo[1, 20] = 98.0
+    tr = liquidity_sweep(sd_from(c, o, h, lo))
+    assert len(tr) == 1
+    t = tr[0]
+    assert t.side == -1 and t.entry_slot == 6 and t.entry == pytest.approx(100.55)
+    assert t.reason == "target" and t.exit == pytest.approx(100.55 - 2.5 * (101.5 - 100.55))
+    assert t.leverage == pytest.approx(min(10, 0.005 / (0.95 / 100.55)))
+
+
+def test_sweep_needs_reclaim_and_limit_expires():
+    o, h, lo, c = _sw_days()
+    h[1, 12] = 100.6                                           # touches the gap too late
+    assert liquidity_sweep(sd_from(c, o, h, lo)) == []
+    o, h, lo, c = _sw_days()
+    c[1, 2:6] = 101.3                                          # never closes back inside
+    lo[1, 2:6] = 101.1
+    h[1, 6] = 100.6
+    assert liquidity_sweep(sd_from(c, o, h, lo)) == []
+
+
+def test_sweep_not_for_dax_or_oil_markets():
+    o, h, lo, c = _sw_days()
+    h[1, 6] = 100.6
+    assert liquidity_sweep(sd_from(c, o, h, lo, market="DE")) == []
+    assert "SW" not in candidates("WTI") and "SW" in candidates("XAUUSD")
+    assert "SW" in candidates("EURUSD") and "BK" in candidates("DAX")
+
+
+def test_trailing_stop_only_tightens():
+    c = np.array([[100.0, 100.5, 101.0, 102.0, 103.0, 102.5, 101.5, 101.0]])
+    o = c.copy()
+    o[0, 6] = 102.4                                            # opens above the trailed stop
+    h, lo = np.maximum(o, c) + 0.05, np.minimum(o, c) - 0.05
+    sd = sd_from(c, o, h, lo)
+    slot, px, reason = _manage(sd, 0, 1, 1, 100.0, 99.0, trail_atr=0.5)
+    assert reason == "stop" and px == pytest.approx(102.0)    # best close 103 - 2 x 0.5
+    assert slot == 6
+
+
+def test_breakout_long_on_trend_day_and_daily_cap():
+    c = noisy_days(30, vol=0.0005)
+    c[-1] = c[-1, 0] * np.linspace(1.0, 1.03, c.shape[1])    # strong up day
+    tr = [t for t in donchian_breakout(sd_from(c)) if t.day == 29]
+    assert tr and tr[0].side == 1
+    noisy = noisy_days(40, vol=0.003)
+    per_day = pd.Series([t.day for t in donchian_breakout(sd_from(noisy))]).value_counts()
+    assert per_day.max() <= 2
+    for t in donchian_breakout(sd_from(noisy)):
+        assert t.exit_slot <= 77 and t.entry_slot % 3 == 0
+
+
+def test_new_strategies_ignore_later_bars():
+    c = noisy_days(30, vol=0.003)
+    d = 25
+    c2 = c.copy()
+    c2[d, 40:] *= 1.05                                         # change one afternoon only
+
+    def early(trades):                                         # everything decided before it
+        return [(t.day, t.side, t.entry_slot) for t in trades
+                if t.day < d or (t.day == d and t.entry_slot < 40)]
+    for f in (donchian_breakout, liquidity_sweep):
+        assert early(f(sd_from(c))) == early(f(sd_from(c2)))
