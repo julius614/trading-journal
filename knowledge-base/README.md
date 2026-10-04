@@ -21,7 +21,7 @@ its source, how it was captured, and the key takeaways I can apply in my trading
 | Triangular stat-arb (EURUSD/GBPUSD/EURGBP) — retired | User spec | [strategies/statarb-triangle/README.md](strategies/statarb-triangle/README.md) | git commit `e5b753f` |
 | Pairs trading AUDUSD/NZDUSD & EURUSD/GBPUSD (H1, Kalman hedge ratio) — shelved: real but slow (~1%/yr) | User spec | [strategies/pairs-eurusd-gbpusd/README.md](strategies/pairs-eurusd-gbpusd/README.md) | [bots/statarb_3leg/](../bots/statarb_3leg/) — prop-firm plan: [prop-firm-plan.md](strategies/pairs-eurusd-gbpusd/prop-firm-plan.md) |
 | Intraday momentum race: noise area, late half hour, 5-min ORB (indices, gold, oil, FX; M5, flat nightly) — run once: nothing passed (gross edge < costs) | Zarattini et al. 2023/2024; Gao et al. 2018; Baltussen et al. 2021 | [strategies/intraday-momentum/README.md](strategies/intraday-momentum/README.md) | [bots/intraday/](../bots/intraday/) |
-| Daily trend-following, many markets (TS 12-month momentum, 50/200 MA, Donchian 50/25) — protocol committed, awaiting data | Moskowitz, Ooi & Pedersen 2012; Hurst, Ooi & Pedersen 2017 | [strategies/trend-following/README.md](strategies/trend-following/README.md) | [bots/trend/](../bots/trend/) |
+| Daily trend-following, many markets (TS 12-month momentum, 50/200 MA, Donchian 50/25) — run once: nothing passed (gross Sharpe ~0.4, eaten by costs) | Moskowitz, Ooi & Pedersen 2012; Hurst, Ooi & Pedersen 2017 | [strategies/trend-following/README.md](strategies/trend-following/README.md) | [bots/trend/](../bots/trend/) |
 
 ## Conventions
 

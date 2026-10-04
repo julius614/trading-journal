@@ -1,0 +1,5 @@
+candidate,discovery_days,discovery_ann_ret,discovery_ann_vol,discovery_sharpe,discovery_max_dd,validate_days,validate_ann_ret,validate_ann_vol,validate_sharpe,validate_max_dd,holdout_days,holdout_ann_ret,holdout_ann_vol,holdout_sharpe,holdout_max_dd,cost2_discovery_ret
+TS,3474,0.0025,0.0453,0.056,-0.1311,1158,-0.018,0.0447,-0.402,-0.1553,1163,-0.0047,0.0401,-0.118,-0.1219,-0.0184
+MA,3474,0.0038,0.046,0.082,-0.1872,1158,-0.0226,0.0423,-0.535,-0.1631,1163,-0.0195,0.0418,-0.467,-0.1629,-0.0161
+DC,3474,-0.0039,0.0442,-0.089,-0.1593,1158,-0.0225,0.0399,-0.564,-0.137,1163,-0.03,0.0381,-0.786,-0.1511,-0.0201
+ALL,3474,0.0051,0.0386,0.134,-0.102,1158,-0.0154,0.0358,-0.432,-0.1201,1163,-0.0127,0.0325,-0.39,-0.1153,-0.0095
