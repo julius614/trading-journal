@@ -6,7 +6,7 @@
   - intraday only (no overnight or weekend risk, so it fits any prop account);
   - FX + gold + indices + oil.
 - **Code:** [`bots/intraday/research/`](../../../bots/intraday/research/).
-- **Status:** the protocol was committed **before** any data was downloaded. No results yet.
+- **Status (2026-10-05):** run once on 2019–2026 data. **No strategy passed** (section 4); costs exceed the small gross edges.
 
 ## 1. Why these three candidates
 All three are documented in peer-reviewed or widely replicated research. Each has a
@@ -142,7 +142,57 @@ evidence", not "proven bad".
 - **Crowding:** the NA paper (2024) is famous. Its edge may shrink after publication.
 
 ## 4. Results
-*(to be filled in after the user's data is downloaded and the protocol is run once)*
+**Run once on 2026-10-05.**
+- **Data:** HistData M1 for 2019 to early/mid-2025, then the broker's own M5 (MetaQuotes-Demo).
+- **Markets:** US500, USTECH100M, XAUUSD, EURUSD, GBPUSD. DAX was dropped because the
+  broker's "DAX" symbol is a US ETF; US30 because HistData has no file for it.
+- **Split:** discovery 2019-01 → 2023-08, validate → 2025-03, hold-out → 2026-10.
+- **Costs:** the broker's spreads plus slippage of half the median spread per side, and
+  $7/lot for FX.
+
+**Verdict: nothing joined, so nothing was kept, and no strategy is strong.** No bot will
+be built from this race.
+
+Profit factor (PF) by period after costs (ret = sum of daily returns at the 1% vol target
+or 1% risk):
+
+| Combo | Discovery PF | Validate PF | Hold-out PF | Note |
+|---|---|---|---|---|
+| NA:US500 | **1.09** | 1.13 | 0.73 | closest, but below the 1.15 join bar, and lost in the hold-out |
+| NA:USTECH100M | 0.98 | 1.08 | 0.85 | |
+| NA:XAUUSD | 0.94 | 1.01 | 1.14 | |
+| OR:XAUUSD | 0.98 | 1.11 | 0.90 | |
+| BK:US500 | 0.96 | 1.07 | 0.84 | user's Option B |
+| SW (all) | 0.42–1.17 | — | — | only 29–40 discovery trades per market; not enough evidence |
+| LH (all) | 0.64–0.89 | — | — | |
+| All FX combos | 0.68–0.88 | — | — | |
+
+**Why: the edge exists but costs are bigger.** These are whole-history figures, gross
+versus cost (diagnostic only, not part of the verdict):
+
+| Combo | Gross PF | Gross sum | Costs | Net |
+|---|---|---|---|---|
+| NA:USTECH100M | 1.23 | +0.56 | 0.61 | −0.06 |
+| NA:US500 | 1.14 | +0.38 | 0.33 | +0.04 |
+| LH:XAUUSD | 1.24 | +0.18 | 0.20 | −0.03 |
+| OR:USTECH100M | 1.12 | +1.17 | 2.43 | −1.26 |
+| BK:US500 | 1.08 | +0.49 | 0.80 | −0.31 |
+| NA:EURUSD | 0.86 | −0.44 | 0.57 | −1.01 |
+
+- On indices and gold, the published momentum effects (noise-area, late half hour, ORB)
+  are **visible before costs** at PF 1.05–1.24. That's thin, and roughly what the papers
+  imply for retail after costs.
+- The broker's demo spreads (e.g. Nasdaq ~1.6 bp, S&P ~0.7 bp) plus slippage use up all
+  of it.
+- FX intraday breakout and sweep ideas lose even before costs.
+- The user's **Option A (sweep + FVG)** trades too rarely to judge: about 30 trades in 4.5
+  years per market. **Option B (Donchian breakout)** lost after costs everywhere.
+
+**What would change the answer** (not tested, so it would need a new pre-declared run):
+- much lower costs (a futures account or a raw-spread broker);
+- or fewer, larger trades (e.g. the noise-area idea on a longer check interval).
+
+Either would be a new hypothesis, not a re-tune of this one.
 
 ## Self-check questions
 1. Why is "strong" defined on validate + hold-out only, not on the full history?
