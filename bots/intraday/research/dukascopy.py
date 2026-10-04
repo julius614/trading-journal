@@ -33,6 +33,10 @@ import pandas as pd
 from .data import load_symbol
 
 URL = "https://datafeed.dukascopy.com/datafeed/{inst}/{y}/{m:02d}/{d:02d}/BID_candles_min_1.bi5"
+# the feed refuses Python's default user agent
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+           "Accept": "*/*", "Referer": "https://www.dukascopy.com/"}
+
 # one record per minute: seconds from day start, open, close, low, high (ints), volume
 RECORD = np.dtype([("t", ">i4"), ("o", ">i4"), ("c", ">i4"), ("l", ">i4"), ("h", ">i4"),
                    ("v", ">f4")])
@@ -66,20 +70,24 @@ def fetch_day(inst: str, day: date, cache: Path, retries: int = 4) -> pd.DataFra
     if f.exists():
         return decode_bi5(f.read_bytes(), day)
     url = URL.format(inst=inst, y=day.year, m=day.month - 1, d=day.day)   # month is 0-based
+    req = urllib.request.Request(url, headers=HEADERS)
+    last = ""
     for attempt in range(retries):
         try:
-            with urllib.request.urlopen(url, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=30) as r:
                 raw = r.read()
             break
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 raw = b""
                 break
+            last = f"HTTP {e.code} {e.reason}"
             _time.sleep(2 ** attempt)
-        except (urllib.error.URLError, TimeoutError, ConnectionError):
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+            last = f"{type(e).__name__}: {getattr(e, 'reason', e)}"
             _time.sleep(2 ** attempt)
     else:
-        raise RuntimeError(f"could not download {url}")
+        raise RuntimeError(f"could not download {url} ({last})")
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_bytes(raw)
     return decode_bi5(raw, day)
