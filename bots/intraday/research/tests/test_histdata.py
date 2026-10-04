@@ -61,14 +61,15 @@ def test_thin_broker_day_filled_from_histdata(tmp_path):
     thin = pd.date_range("2024-01-03 14:30", periods=3, freq="5min", tz="UTC")   # 3 of 12
     full2 = pd.date_range("2024-01-04 14:30", periods=12, freq="5min", tz="UTC")
     idx = full.append(thin).append(full2)
-    pd.DataFrame({"datetime": idx, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0,
+    b = 4700.25                                                 # same market, own quotes
+    pd.DataFrame({"datetime": idx, "open": b, "high": b, "low": b, "close": b,
                   "volume": 1, "spread": 50}).to_csv(broker_dir / "US500_M5.csv.gz", index=False)
     (broker_dir / "US500_spec.json").write_text(json.dumps({"point": 0.01}))
     hd.build_symbol("US500", "SPXUSD", raw, broker_dir, out)
     df = pd.read_csv(out / "US500_M5.csv.gz", parse_dates=["datetime"]).set_index("datetime")
     day3 = df.loc["2024-01-03"]
-    assert len(day3) == 12 and (day3["close"] > 100).all()     # HistData's whole day
-    assert (df.loc["2024-01-04", "close"] == 1.0).all()         # broker's full day kept
+    assert len(day3) == 12 and (day3["close"] != b).all()      # HistData's whole day
+    assert (df.loc["2024-01-04", "close"] == b).all()           # broker's full day kept
 
 
 def test_parse_metatrader_format():
