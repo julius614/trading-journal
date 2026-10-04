@@ -24,7 +24,7 @@ import pandas as pd
 
 from .config import load_config
 from .data_fetcher import DataFetcher
-from .execution import MT5Broker
+from .execution import BrokerError, MT5Broker
 
 
 def check_utc_sanity(symbol: str, df: pd.DataFrame) -> None:
@@ -80,23 +80,26 @@ async def download(symbols: List[str], timeframe: str, bars: int,
     try:
         fetcher = DataFetcher(broker, cfg)
         for symbol in symbols:
-            if start is not None:   # date chunks: not capped at ~100k bars
-                df = await download_range(broker, symbol, timeframe, start,
-                                          datetime.now() + timedelta(days=1))
-            else:
-                df = await broker.get_rates(symbol, timeframe, bars)   # closed bars, UTC
-            check_utc_sanity(symbol, df)
-            fetcher.history_path(symbol, timeframe).unlink(missing_ok=True)   # replace, don't merge
-            path = fetcher.save_history(symbol, df, timeframe)
-            if gzip:   # ~5x smaller, so years of M5 data fit in git
-                gz = Path(f"{path}.gz")
-                pd.read_csv(path).to_csv(gz, index=False, compression="gzip")
-                Path(path).unlink()
-                path = gz
-            spec = await broker.symbol_spec(symbol)
-            spec_path = Path(path).with_name(f"{symbol}_spec.json")
-            spec_path.write_text(json.dumps(spec, indent=2))
-            print(f"{symbol}: {len(df)} bars {df.index[0]} -> {df.index[-1]} saved to {path}")
+            try:
+                if start is not None:   # date chunks: not capped at ~100k bars
+                    df = await download_range(broker, symbol, timeframe, start,
+                                              datetime.now() + timedelta(days=1))
+                else:
+                    df = await broker.get_rates(symbol, timeframe, bars)   # closed bars, UTC
+                check_utc_sanity(symbol, df)
+                fetcher.history_path(symbol, timeframe).unlink(missing_ok=True)   # replace, don't merge
+                path = fetcher.save_history(symbol, df, timeframe)
+                if gzip:   # ~5x smaller, so years of M5 data fit in git
+                    gz = Path(f"{path}.gz")
+                    pd.read_csv(path).to_csv(gz, index=False, compression="gzip")
+                    Path(path).unlink()
+                    path = gz
+                spec = await broker.symbol_spec(symbol)
+                spec_path = Path(path).with_name(f"{symbol}_spec.json")
+                spec_path.write_text(json.dumps(spec, indent=2))
+                print(f"{symbol}: {len(df)} bars {df.index[0]} -> {df.index[-1]} saved to {path}")
+            except BrokerError as exc:   # unknown symbol etc.: skip it, keep going
+                print(f"{symbol}: skipped - {exc}")
     finally:
         await broker.shutdown()
 
