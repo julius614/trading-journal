@@ -73,6 +73,7 @@ class DownloadError(RuntimeError):
 
 RETRY_CODES = {429, 500, 502, 503, 504}
 PAUSE = 0.2                  # seconds after each live request, to stay under the rate limit
+TIMEOUT = 12                 # seconds; a stalled connection is retried sooner
 _sleep = _time.sleep         # replaced in tests
 
 
@@ -82,7 +83,7 @@ def download(url: str, retries: int = 8) -> bytes:
     last = ""
     for attempt in range(retries):
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
                 raw = r.read()
             _sleep(PAUSE)
             return raw
