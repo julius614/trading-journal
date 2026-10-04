@@ -27,11 +27,14 @@ from .data_fetcher import DataFetcher
 from .execution import BrokerError, MT5Broker
 
 
+INTRADAY = {"M1", "M5", "M15", "M30", "H1", "H4"}
+
+
 def check_utc_sanity(symbol: str, df: pd.DataFrame) -> None:
     """FX has no Saturday bars in UTC. If there are some, the server-time setting is wrong."""
     saturday = int((df.index.dayofweek == 5).sum())
     if saturday:
-        raise SystemExit(
+        raise ValueError(
             f"{symbol}: {saturday} bars land on a Saturday in UTC, so the broker server-time "
             "setting is wrong. Nothing was saved. Set MT5_SERVER_TIMEZONE (usually ny_close) "
             "and try again.")
@@ -63,7 +66,7 @@ async def download_range(broker, symbol: str, timeframe: str, start: datetime, e
             parts.append(part)
         t = t_end
     if not parts:
-        raise SystemExit(f"{symbol}: the server has no {timeframe} history from {start:%Y-%m-%d}")
+        raise ValueError(f"{symbol}: the server has no {timeframe} history from {start:%Y-%m-%d}")
     df = pd.concat(parts).sort_index()
     return df[~df.index.duplicated(keep="last")]
 
@@ -86,7 +89,8 @@ async def download(symbols: List[str], timeframe: str, bars: int,
                                               datetime.now() + timedelta(days=1))
                 else:
                     df = await broker.get_rates(symbol, timeframe, bars)   # closed bars, UTC
-                check_utc_sanity(symbol, df)
+                if timeframe in INTRADAY:   # a D1 bar stamped Saturday UTC is a normal Sunday session
+                    check_utc_sanity(symbol, df)
                 fetcher.history_path(symbol, timeframe).unlink(missing_ok=True)   # replace, don't merge
                 path = fetcher.save_history(symbol, df, timeframe)
                 if gzip:   # ~5x smaller, so years of M5 data fit in git
@@ -98,7 +102,7 @@ async def download(symbols: List[str], timeframe: str, bars: int,
                 spec_path = Path(path).with_name(f"{symbol}_spec.json")
                 spec_path.write_text(json.dumps(spec, indent=2))
                 print(f"{symbol}: {len(df)} bars {df.index[0]} -> {df.index[-1]} saved to {path}")
-            except BrokerError as exc:   # unknown symbol etc.: skip it, keep going
+            except (BrokerError, ValueError) as exc:   # unknown symbol, bad data: skip, keep going
                 print(f"{symbol}: skipped - {exc}")
     finally:
         await broker.shutdown()

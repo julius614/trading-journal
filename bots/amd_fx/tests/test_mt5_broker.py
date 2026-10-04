@@ -220,7 +220,7 @@ def test_downloader_rejects_saturday_bars():
     idx = pd.date_range("2026-10-02 20:50", periods=3, freq="5min", tz="UTC")
     check_utc_sanity("EURUSD", pd.DataFrame({"close": 1.0}, index=idx))     # Friday: fine
     sat = pd.DatetimeIndex([pd.Timestamp("2026-10-03 09:50", tz="UTC")])
-    with pytest.raises(SystemExit, match="Saturday"):
+    with pytest.raises(ValueError, match="Saturday"):
         check_utc_sanity("EURUSD", pd.DataFrame({"close": 1.0}, index=sat))
 
 

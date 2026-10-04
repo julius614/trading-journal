@@ -5,7 +5,9 @@ BEFORE the data was seen; see git history).
 
 Data: D1 bars from the user's MT5 server (bots.amd_fx.download_history --timeframe D1
 --out-dir data/trend --gzip), one <SYMBOL>_D1.csv.gz + <SYMBOL>_spec.json per market.
-Universe: every downloaded market with >= 5 years of daily bars (no picking markets after
+Daily bars are re-dated to the server's trading date (server midnight is 21:00/22:00 UTC
+the day before) and the short Sunday-session bars are dropped, so Monday's return runs from
+Friday's close. Universe: every downloaded market with >= 5 years of daily bars (no picking markets after
 the fact). At least 8 markets are required, otherwise the verdict is "not enough data".
 
 Candidates (classic, published rules; parameters fixed):
@@ -164,11 +166,18 @@ def concentration(port: pd.Series, per_market: pd.DataFrame) -> Tuple[float, flo
 
 
 # ------------------------------------------------------------------ data
+def trading_dates(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """D1 bars are stamped at server midnight = 21:00/22:00 UTC the previous day on an
+    ny_close (UTC+2/+3) server; +3 hours gives the server's trading date."""
+    return (index + pd.Timedelta(hours=3)).normalize()
+
+
 def load_markets(data_dir: str) -> Tuple[Dict[str, pd.DataFrame], List[str]]:
     markets, skipped = {}, []
     for sym in available_symbols(data_dir, "D1"):
         df, _ = load_symbol(data_dir, sym, "D1")
-        df.index = df.index.normalize()
+        df.index = trading_dates(df.index)
+        df = df[df.index.dayofweek < 5]                   # drop the short Sunday session bar
         df = df[~df.index.duplicated(keep="last")]
         years = (df.index.max() - df.index.min()).days / 365.25
         if years >= MIN_YEARS:

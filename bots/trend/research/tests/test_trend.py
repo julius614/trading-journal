@@ -90,3 +90,23 @@ def test_not_enough_markets(tmp_path, capsys):
         (tmp_path / f"{s}_spec.json").write_text(json.dumps({"point": 0.01}))
     tr.main(["--data-dir", str(tmp_path)])
     assert "not enough data" in capsys.readouterr().out
+
+
+def test_d1_bars_get_server_trading_dates_and_sunday_dropped(tmp_path):
+    idx = pd.DatetimeIndex(["2024-01-04 22:00", "2024-01-06 22:00", "2024-01-07 22:00"],
+                           tz="UTC")                     # Fri, Sun-session, Mon (server dates)
+    days = tr.trading_dates(idx)
+    assert [d.day_name() for d in days] == ["Friday", "Sunday", "Monday"]
+    summer = tr.trading_dates(pd.DatetimeIndex(["2024-07-04 21:00"], tz="UTC"))
+    assert summer[0].day_name() == "Friday"
+    # load_markets drops the Sunday bar
+    n = 1400
+    full = pd.bdate_range("2019-01-01", periods=n, tz="UTC") - pd.Timedelta(hours=2)
+    sun = pd.DatetimeIndex(["2019-01-05 22:00"], tz="UTC")   # Sunday 2019-01-06 server
+    stamps = full.append(sun).sort_values()
+    c = np.linspace(100, 120, len(stamps))
+    pd.DataFrame({"datetime": stamps, "open": c, "high": c, "low": c, "close": c,
+                  "volume": 1, "spread": 2}).to_csv(tmp_path / "X_D1.csv.gz", index=False)
+    (tmp_path / "X_spec.json").write_text(json.dumps({"point": 0.01}))
+    m, _ = tr.load_markets(str(tmp_path))
+    assert len(m["X"]) == n and (m["X"].index.dayofweek < 5).all()
