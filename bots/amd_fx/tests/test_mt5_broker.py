@@ -222,3 +222,50 @@ def test_downloader_rejects_saturday_bars():
     sat = pd.DatetimeIndex([pd.Timestamp("2026-10-03 09:50", tz="UTC")])
     with pytest.raises(SystemExit, match="Saturday"):
         check_utc_sanity("EURUSD", pd.DataFrame({"close": 1.0}, index=sat))
+
+
+# ---- date-range downloads (past the ~100k-bar cap of copy_rates_from_pos)
+def _range_rates(start, end, first="2024-01-01"):
+    """M5 bars every 5 minutes in [start, end], none before `first` (server time)."""
+    lo = max(pd.Timestamp(start), pd.Timestamp(first))
+    times = pd.date_range(lo.ceil("5min"), pd.Timestamp(end), freq="5min")
+    dt = np.dtype([("time", "i8"), ("open", "f8"), ("high", "f8"), ("low", "f8"),
+                   ("close", "f8"), ("tick_volume", "i8"), ("spread", "i4"), ("real_volume", "i8")])
+    return np.array([(int(t.timestamp()), 1.1, 1.2, 1.0, 1.1, 10, 8, 0) for t in times], dtype=dt)
+
+
+def test_get_rates_range_converts_and_handles_empty(broker):
+    b, fake = broker
+    fake.copy_rates_range = lambda s, tf, a, z: _range_rates(a, z)
+    df = asyncio.run(b.get_rates_range("EURUSD", "M5", pd.Timestamp("2024-03-05 10:00"),
+                                       pd.Timestamp("2024-03-05 11:00")))
+    assert len(df) == 13 and str(df.index.tz) == "UTC"
+    assert df.index[0] == pd.Timestamp("2024-03-05 07:00", tz="UTC")       # server UTC+3
+    empty = asyncio.run(b.get_rates_range("EURUSD", "M5", pd.Timestamp("2020-01-01"),
+                                          pd.Timestamp("2020-02-01")))
+    assert empty.empty
+
+
+def test_download_range_stitches_chunks_without_gaps_or_duplicates():
+    from datetime import datetime
+    from bots.amd_fx.download_history import download_range
+
+    class FakeBroker:
+        calls = []
+
+        async def get_rates_range(self, symbol, tf, a, z):
+            self.calls.append((a, z))
+            rates = _range_rates(a, z, first="2023-12-20")
+            df = pd.DataFrame(rates)
+            df.index = pd.DatetimeIndex(pd.to_datetime(df["time"], unit="s")).tz_localize("UTC") \
+                if len(df) else pd.DatetimeIndex([], tz="UTC")
+            return df.rename(columns={"tick_volume": "volume"})
+
+    lines = []
+    fb = FakeBroker()
+    df = asyncio.run(download_range(fb, "X", "M5", datetime(2023, 11, 1), datetime(2024, 3, 1),
+                                    chunk_days=30, echo=lines.append))
+    assert df.index.is_unique and df.index.is_monotonic_increasing
+    assert df.index[0] == pd.Timestamp("2023-12-20", tz="UTC")
+    assert (df.index.to_series().diff().dropna() == pd.Timedelta("5min")).all()
+    assert any(": 0 bars" in l for l in lines) and len(lines) == len(fb.calls)

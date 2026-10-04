@@ -40,9 +40,10 @@ python -m bots.amd_fx.download_history --list "*OIL*"
 **3. Download M5 history.** Replace the names with yours from step 2. In MT5, first set
 Tools > Options > Charts > "Max bars in chart" to **Unlimited**.
 ```powershell
-python -m bots.amd_fx.download_history --timeframe M5 --bars 400000 --out-dir data/intraday --gzip --symbols US500 NAS100 US30 GER40 UK100 XAUUSD USOIL EURUSD GBPUSD USDJPY AUDUSD USDCAD
+python -m bots.amd_fx.download_history --timeframe M5 --from 2019-01-01 --out-dir data/intraday --gzip --symbols US500 USTECH100M US30 DAX UK100 XAUUSD WTI EURUSD GBPUSD USDJPY AUDUSD USDCAD
 ```
-Each symbol prints its date range. **Paste that output back to me.** Three or more years
+`--from` downloads in 60-day chunks, because a single MT5 request stops at ~100k bars.
+Each chunk prints its bar count (0 = the server has nothing that far back). Each symbol prints its date range. **Paste that output back to me.** Three or more years
 per symbol is good; under two years is too short to judge.
 
 **4. Get longer history from Dukascopy** (your broker keeps only ~1.5 years of M5).

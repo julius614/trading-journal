@@ -3,7 +3,7 @@
     python -m bots.amd_fx.download_history --symbols EURUSD GBPUSD --timeframe M5 --bars 300000
     python -m bots.amd_fx.download_history --list "*500*"        # find your broker's names
     python -m bots.amd_fx.download_history --symbols US500 XAUUSD --timeframe M5 \
-        --bars 400000 --out-dir data/intraday --gzip                # + <SYMBOL>_spec.json
+        --from 2019-01-01 --out-dir data/intraday --gzip            # + <SYMBOL>_spec.json
 
 Files go to data/amd_fx/<SYMBOL>_<TF>.csv (or --out-dir), replaced on each download, with
 <SYMBOL>_spec.json beside them (point size, contract size, currency). How far back you get depends on the terminal's
@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import dataclasses
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
@@ -48,8 +49,28 @@ async def list_symbols(pattern: str) -> None:
         await broker.shutdown()
 
 
+async def download_range(broker, symbol: str, timeframe: str, start: datetime, end: datetime,
+                         chunk_days: int = 60, echo=print) -> pd.DataFrame:
+    """Fetch [start, end] in date chunks (each overlapping the previous by a day) and
+    stitch them, so the history is not capped at ~100k bars per request."""
+    parts = []
+    t = start
+    while t < end:
+        t_end = min(t + timedelta(days=chunk_days), end)
+        part = await broker.get_rates_range(symbol, timeframe, t - timedelta(days=1), t_end)
+        echo(f"  {symbol} {t:%Y-%m-%d} -> {t_end:%Y-%m-%d}: {len(part)} bars")
+        if len(part):
+            parts.append(part)
+        t = t_end
+    if not parts:
+        raise SystemExit(f"{symbol}: the server has no {timeframe} history from {start:%Y-%m-%d}")
+    df = pd.concat(parts).sort_index()
+    return df[~df.index.duplicated(keep="last")]
+
+
 async def download(symbols: List[str], timeframe: str, bars: int,
-                   out_dir: Optional[str] = None, gzip: bool = False) -> None:
+                   out_dir: Optional[str] = None, gzip: bool = False,
+                   start: Optional[datetime] = None) -> None:
     cfg = load_config()
     if out_dir:
         cfg = dataclasses.replace(cfg, data_dir=out_dir)
@@ -59,7 +80,11 @@ async def download(symbols: List[str], timeframe: str, bars: int,
     try:
         fetcher = DataFetcher(broker, cfg)
         for symbol in symbols:
-            df = await broker.get_rates(symbol, timeframe, bars)   # closed bars, UTC
+            if start is not None:   # date chunks: not capped at ~100k bars
+                df = await download_range(broker, symbol, timeframe, start,
+                                          datetime.now() + timedelta(days=1))
+            else:
+                df = await broker.get_rates(symbol, timeframe, bars)   # closed bars, UTC
             check_utc_sanity(symbol, df)
             fetcher.history_path(symbol, timeframe).unlink(missing_ok=True)   # replace, don't merge
             path = fetcher.save_history(symbol, df, timeframe)
@@ -83,13 +108,16 @@ def main(argv: Optional[List[str]] = None) -> None:
     p.add_argument("--bars", type=int, default=300_000, help="~300k M5 bars = ~4 years")
     p.add_argument("--out-dir", help="folder for the CSVs (default data/amd_fx)")
     p.add_argument("--gzip", action="store_true", help="save as <SYMBOL>_<TF>.csv.gz")
+    p.add_argument("--from", dest="start", metavar="YYYY-MM-DD",
+                   help="download everything since this date in 60-day chunks (ignores --bars)")
     p.add_argument("--list", metavar="PATTERN",
                    help='only list broker symbol names matching e.g. "*500*", "XAU*", "*"')
     a = p.parse_args(argv)
     if a.list:
         asyncio.run(list_symbols(a.list))
         return
-    asyncio.run(download(a.symbols, a.timeframe, a.bars, a.out_dir, a.gzip))
+    start = datetime.fromisoformat(a.start) if a.start else None
+    asyncio.run(download(a.symbols, a.timeframe, a.bars, a.out_dir, a.gzip, start))
 
 
 if __name__ == "__main__":

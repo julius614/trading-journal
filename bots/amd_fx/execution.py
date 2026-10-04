@@ -311,6 +311,22 @@ class MT5Broker(Broker):
         if rates is None or len(rates) == 0:
             raise BrokerError(f"copy_rates_from_pos({symbol},{timeframe}) failed: "
                               f"{await self._last_error()}")
+        return await self._rates_frame(symbol, rates)
+
+    async def get_rates_range(self, symbol: str, timeframe: str, start: datetime,
+                              end: datetime) -> pd.DataFrame:
+        """Bars whose server time is in [start, end] (naive server-time datetimes). Not
+        limited to ~100k bars like a single copy_rates_from_pos call, so long histories
+        can be fetched in chunks. Empty frame if the server has nothing there."""
+        await self._ensure_symbol(symbol)
+        tf = getattr(self._mt5, _MT5_TIMEFRAMES[timeframe])
+        rates = await self._call("copy_rates_range", symbol, tf, start, end)
+        if rates is None or len(rates) == 0:
+            return pd.DataFrame(columns=["open", "high", "low", "close", "volume", "spread"],
+                                index=pd.DatetimeIndex([], tz="UTC"))
+        return await self._rates_frame(symbol, rates)
+
+    async def _rates_frame(self, symbol: str, rates: Any) -> pd.DataFrame:
         mode = await self._resolve_timezone(symbol)
         df = pd.DataFrame(rates)
         df.index = server_to_utc(pd.DatetimeIndex(pd.to_datetime(df["time"], unit="s")), mode)
