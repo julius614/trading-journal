@@ -73,3 +73,101 @@ def test_build_symbol_offline(tmp_path, monkeypatch):
     assert spec["price_scale"] == pytest.approx(1e-3) and spec["source"].startswith("dukascopy")
     assert df["spread"].median() == pytest.approx(40)
     assert 3990 < df["close"].median() < 4010
+
+
+# ---- rate limiting, partial failures, --check (urlopen faked, no network)
+import io
+import urllib.error
+
+
+class _Resp(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _fake_urlopen(script):
+    """script: list of int (HTTP error code) or bytes (body), consumed per call."""
+    calls = []
+
+    def urlopen(req, timeout=30):
+        calls.append(req.full_url)
+        item = script.pop(0) if script else b""
+        if isinstance(item, int):
+            raise urllib.error.HTTPError(req.full_url, item, "err", {}, None)
+        return _Resp(item)
+    return urlopen, calls
+
+
+@pytest.fixture
+def no_sleep(monkeypatch):
+    waits = []
+    monkeypatch.setattr(dk, "_sleep", waits.append)
+    return waits
+
+
+def test_download_backs_off_on_503_then_succeeds(monkeypatch, no_sleep):
+    body = _bi5(range(3))
+    urlopen, calls = _fake_urlopen([503, 503, body])
+    monkeypatch.setattr(dk.urllib.request, "urlopen", urlopen)
+    assert dk.download("http://x") == body
+    assert len(calls) == 3
+    backoffs = [w for w in no_sleep if w > dk.PAUSE]
+    assert len(backoffs) == 2 and 2 <= backoffs[0] < 3 and 4 <= backoffs[1] < 5
+    assert calls[0] == "http://x"
+
+
+def test_download_gives_up_and_404_is_empty(monkeypatch, no_sleep):
+    urlopen, _ = _fake_urlopen([503] * 10)
+    monkeypatch.setattr(dk.urllib.request, "urlopen", urlopen)
+    with pytest.raises(dk.DownloadError, match="503"):
+        dk.download("http://x", retries=3)
+    urlopen, _ = _fake_urlopen([404])
+    monkeypatch.setattr(dk.urllib.request, "urlopen", urlopen)
+    assert dk.download("http://x") == b""
+    urlopen, calls = _fake_urlopen([403, 403])
+    monkeypatch.setattr(dk.urllib.request, "urlopen", urlopen)
+    with pytest.raises(dk.DownloadError, match="403"):
+        dk.download("http://x")
+    assert len(calls) == 1                         # 403 is not retried
+
+
+def _days(n):
+    return [date(2024, 1, 1) + __import__("datetime").timedelta(days=i) for i in range(n)]
+
+
+def test_fetch_days_tolerates_a_few_failed_days(monkeypatch, tmp_path, capsys):
+    bad = {date(2024, 1, 3)}
+
+    def fake(inst, day, cache):
+        if day in bad:
+            raise dk.DownloadError("503")
+        return dk.decode_bi5(_bi5(range(2)), day)
+    monkeypatch.setattr(dk, "fetch_day", fake)
+    parts = dk.fetch_days("X", _days(100), tmp_path, workers=2)
+    assert len(parts) == 99
+    assert "1 day(s) missing" in capsys.readouterr().out
+    bad.update(_days(100)[50:60])
+    with pytest.raises(dk.DownloadError, match="could not be downloaded"):
+        dk.fetch_days("X", _days(100), tmp_path, workers=2)
+
+
+def test_failed_day_not_cached(monkeypatch, tmp_path, no_sleep):
+    urlopen, _ = _fake_urlopen([503] * 10)
+    monkeypatch.setattr(dk.urllib.request, "urlopen", urlopen)
+    with pytest.raises(dk.DownloadError):
+        dk.fetch_day("X", date(2024, 1, 17), tmp_path, retries=2)
+    assert not (tmp_path / "X" / "20240117.bi5").exists()
+
+
+def test_check_reports_each_symbol(monkeypatch, no_sleep, capsys):
+    urlopen, calls = _fake_urlopen([_bi5(range(5)), 404, 503, 503, 503])
+    monkeypatch.setattr(dk.urllib.request, "urlopen", urlopen)
+    dk.check(["US500", "BADNAME", "XAUUSD"])
+    out = capsys.readouterr().out.splitlines()
+    assert "OK" in out[0] and "5 minutes" in out[0] and "USA500IDXUSD" in out[0]
+    assert "404" in out[1]
+    assert "FAILED" in out[2] and "503" in out[2]
+    assert calls[0].endswith("/USA500IDXUSD/2024/00/17/BID_candles_min_1.bi5")

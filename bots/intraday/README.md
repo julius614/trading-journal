@@ -49,8 +49,10 @@ per symbol is good; under two years is too short to judge.
 This uses your broker files from step 3 for spreads and the price scale, needs no MT5,
 and takes roughly 30–60 minutes. If it stops, run it again; it resumes.
 ```powershell
+python -m bots.intraday.research.dukascopy --check
 python -m bots.intraday.research.dukascopy --from 2019-01-01
 ```
+`--check` downloads one day per market in about 10 seconds. Every line should say OK.
 
 **5. Send me the data**
 ```powershell

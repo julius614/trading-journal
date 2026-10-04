@@ -1,6 +1,7 @@
 """Download long M5 history from Dukascopy's free data feed (your broker keeps only ~1.5
 years of M5), priced in UTC, and attach YOUR broker's spreads so costs stay realistic.
 
+    python -m bots.intraday.research.dukascopy --check            # 10-second test first
     python -m bots.intraday.research.dukascopy --from 2019-01-01
 
 Reads the broker files already in data/intraday (<SYMBOL>_M5.csv.gz + _spec.json, from
@@ -18,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import lzma
+import random
 import shutil
 import time as _time
 import urllib.error
@@ -33,7 +35,7 @@ import pandas as pd
 from .data import load_symbol
 
 URL = "https://datafeed.dukascopy.com/datafeed/{inst}/{y}/{m:02d}/{d:02d}/BID_candles_min_1.bi5"
-# the feed refuses Python's default user agent
+# look like a browser; the feed may refuse Python's default user agent
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
            "Accept": "*/*", "Referer": "https://www.dukascopy.com/"}
 
@@ -65,32 +67,95 @@ def decode_bi5(raw: bytes, day: date) -> pd.DataFrame:
     return df[df["volume"] > 0]          # Dukascopy pads closed minutes with flat zero-volume bars
 
 
-def fetch_day(inst: str, day: date, cache: Path, retries: int = 4) -> pd.DataFrame:
-    f = cache / inst / f"{day:%Y%m%d}.bi5"
-    if f.exists():
-        return decode_bi5(f.read_bytes(), day)
-    url = URL.format(inst=inst, y=day.year, m=day.month - 1, d=day.day)   # month is 0-based
+class DownloadError(RuntimeError):
+    pass
+
+
+RETRY_CODES = {429, 500, 502, 503, 504}
+PAUSE = 0.2                  # seconds after each live request, to stay under the rate limit
+_sleep = _time.sleep         # replaced in tests
+
+
+def download(url: str, retries: int = 8) -> bytes:
+    """The raw file, b"" if it doesn't exist (404). Backs off on rate limiting (503 etc.)."""
     req = urllib.request.Request(url, headers=HEADERS)
     last = ""
     for attempt in range(retries):
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
                 raw = r.read()
-            break
+            _sleep(PAUSE)
+            return raw
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                raw = b""
-                break
+                return b""
             last = f"HTTP {e.code} {e.reason}"
-            _time.sleep(2 ** attempt)
+            if e.code not in RETRY_CODES:
+                break
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
             last = f"{type(e).__name__}: {getattr(e, 'reason', e)}"
-            _time.sleep(2 ** attempt)
-    else:
-        raise RuntimeError(f"could not download {url} ({last})")
+        _sleep(min(60.0, 2.0 ** (attempt + 1)) + random.uniform(0, 1))
+    raise DownloadError(f"could not download {url} ({last})")
+
+
+def day_url(inst: str, day: date) -> str:
+    return URL.format(inst=inst, y=day.year, m=day.month - 1, d=day.day)   # month is 0-based
+
+
+def fetch_day(inst: str, day: date, cache: Path, retries: int = 8) -> pd.DataFrame:
+    f = cache / inst / f"{day:%Y%m%d}.bi5"
+    if f.exists():
+        return decode_bi5(f.read_bytes(), day)
+    raw = download(day_url(inst, day), retries)      # failures are not cached
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_bytes(raw)
     return decode_bi5(raw, day)
+
+
+def fetch_days(inst: str, days: List[date], cache: Path, workers: int,
+               max_missing: float = 0.02) -> List[pd.DataFrame]:
+    """All days; failed days are retried once more at the end, one at a time."""
+    def safe(d: date) -> Optional[pd.DataFrame]:
+        try:
+            return fetch_day(inst, d, cache)
+        except DownloadError:
+            return None
+
+    with ThreadPoolExecutor(workers) as pool:
+        parts = list(pool.map(safe, days))
+    failed = [i for i, p in enumerate(parts) if p is None]
+    for i in failed:
+        parts[i] = safe(days[i])
+    still = [days[i] for i in failed if parts[i] is None]
+    if len(still) > max_missing * len(days):
+        raise DownloadError(f"{len(still)} of {len(days)} days could not be downloaded "
+                            f"(e.g. {day_url(inst, still[0])}); run again later to fill them")
+    if still:
+        print(f"  warning: {len(still)} day(s) missing, e.g. {still[0]} - run again to fill",
+              flush=True)
+    return [p for p in parts if p is not None]
+
+
+CHECK_DAY = date(2024, 1, 17)    # a normal Wednesday
+
+
+def check(symbols: List[str]) -> None:
+    """Download one known trading day per symbol and show what came back."""
+    for sym in symbols:
+        inst = DEFAULT_MAP.get(sym, sym)
+        url = day_url(inst, CHECK_DAY)
+        try:
+            raw = download(url, retries=3)
+        except DownloadError as e:
+            print(f"{sym:<11} {inst:<14} FAILED  {e}", flush=True)
+            continue
+        if not raw:
+            print(f"{sym:<11} {inst:<14} 404 - no such file (wrong instrument name?)", flush=True)
+            continue
+        df = decode_bi5(raw, CHECK_DAY)
+        first = f"{df['close'].iloc[0]:.0f}" if len(df) else "-"
+        print(f"{sym:<11} {inst:<14} OK  {len(raw)} bytes, {len(df)} minutes, "
+              f"first raw close {first}", flush=True)
 
 
 def to_m5(m1: pd.DataFrame) -> pd.DataFrame:
@@ -114,13 +179,13 @@ def spread_profile(broker: pd.DataFrame, point: float) -> pd.Series:
 
 
 def build_symbol(symbol: str, inst: str, start: date, end: date, broker_dir: Path,
-                 out_dir: Path, workers: int = 8) -> str:
+                 out_dir: Path, workers: int = 2) -> str:
     broker, spec = load_symbol(broker_dir, symbol)
     days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
     days = [d for d in days if d.weekday() != 5]          # no Saturday sessions
-    cache = out_dir / "_cache"
-    with ThreadPoolExecutor(workers) as pool:
-        parts = list(pool.map(lambda d: fetch_day(inst, d, cache), days))
+    parts = fetch_days(inst, days, out_dir / "_cache", workers)
+    if not parts:
+        raise DownloadError(f"{symbol}: no data downloaded")
     m1 = pd.concat([p for p in parts if len(p)]).sort_index()
     m5 = to_m5(m1)
     overlap = broker.index.intersection(m5.index)
@@ -148,9 +213,14 @@ def main(argv: Optional[List[str]] = None) -> None:
     p.add_argument("--broker-dir", default="data/intraday")
     p.add_argument("--out-dir", default="data/intraday_duka")
     p.add_argument("--symbols", nargs="+", default=list(DEFAULT_MAP))
-    p.add_argument("--workers", type=int, default=8)
+    p.add_argument("--workers", type=int, default=2, help="parallel downloads (keep low)")
+    p.add_argument("--check", action="store_true",
+                   help="only test one day per symbol (about 10 seconds)")
     p.add_argument("--clear-cache", action="store_true", help="delete the raw day files at the end")
     a = p.parse_args(argv)
+    if a.check:
+        check(a.symbols)
+        return
     start = date.fromisoformat(a.start)
     end = date.fromisoformat(a.end) if a.end else date.today() - timedelta(days=1)
     out = Path(a.out_dir)
