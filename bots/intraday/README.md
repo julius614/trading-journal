@@ -11,6 +11,7 @@ pre-declared "strong" test.
 |---|---|
 | `research/sessions.py` | Market sessions (New York / Frankfurt / London, DST-aware), M5 bars into days |
 | `research/dukascopy.py` | Long M5 history from Dukascopy, broker spreads attached |
+| `research/histdata.py` | Long M5 history from HistData.com 1-minute files, spliced onto the broker's recent data |
 | `research/data.py` | Loads `<SYMBOL>_M5.csv` and `<SYMBOL>_spec.json`; MT5 spread to price |
 | `research/strategies.py` | NA (noise area), LH (late half hour), OR (5-min opening range), SW (liquidity sweep + FVG), BK (M15 Donchian breakout); fixed parameters |
 | `research/engine.py` | Costs (spread, slippage, FX commission) and statistics |
@@ -55,9 +56,20 @@ python -m bots.intraday.research.dukascopy --from 2019-01-01
 ```
 `--check` downloads one day per market in about 10 seconds. Every line should say OK.
 
+**4b. If Dukascopy keeps refusing: HistData.com instead** (reliable, but manual).
+For each market and each year 2019–2025, open
+`https://www.histdata.com/download-free-forex-historical-data/?/ascii/1-minute-bar-quotes/<code>/<year>`
+(codes: spxusd, nsxusd, grxeur, xauusd, eurusd, gbpusd, ukxgbp, wtiusd, usdjpy, audusd,
+usdcad), click the `HISTDATA_COM_ASCII_..._M1<year>.zip` link, and save the zip, unopened,
+in `data/histdata_raw/`. Then:
+```powershell
+python -m bots.intraday.research.histdata
+```
+It writes `data/intraday_hd/`. Run the race with `--data-dir data/intraday_hd`.
+
 **5. Send me the data**
 ```powershell
-git add data/intraday data/intraday_duka
+git add data/intraday data/intraday_duka data/intraday_hd
 git commit -m "Add M5 data for the intraday race"
 git push
 ```

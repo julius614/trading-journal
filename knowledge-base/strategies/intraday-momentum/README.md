@@ -113,6 +113,19 @@ evidence", not "proven bad".
 5. **The passing box is sound** and is built into SW and BK: 0.5% risk, 2 trades/losses a
    day, and a −4% hard stop. The −4% stop is reported as a 3-month pass probability.
 
+### Data-source amendment 2 (2026-10-05, before any strategy was run)
+- **Dukascopy** was too unreliable from the user's connection: timeouts and 503s, about
+  30 days fetched in hours.
+- **MetaQuotes-Demo** (the user's MT5 server) keeps M5 history only from March 2025. It
+  was checked with date-range requests, and there is nothing earlier.
+- **History source:** **HistData.com free 1-minute files** for 2019–2025 (New York
+  standard time, converted to UTC).
+- **Splicing:** whole days come from the broker's own M5 bars where it has the day, and
+  from HistData otherwise.
+- **Costs:** still the broker's hourly spread profile.
+- **Unchanged:** the rules, parameters and thresholds.
+- **US30 is dropped:** HistData has no Dow Jones file.
+
 ## 3. How this test could still lie
 - **History length:**
   - MT5 brokers often keep only 2–5 years of M5 data for CFDs.
