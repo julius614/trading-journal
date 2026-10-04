@@ -1,5 +1,9 @@
 # Pairs-Trading Bot — AUDUSD vs NZDUSD (default) or EURUSD vs GBPUSD, H1 (MetaTrader 5)
 
+> **Status: SHELVED (2026-10-04).** It works but is too slow for a prop challenge. See
+> section 8 of the strategy note and `prop-firm-plan.md`. The code is kept unchanged for
+> later use.
+
 Two-leg statistical arbitrage: a Kalman filter tracks a moving hedge ratio between two
 USD-quoted pairs. When one leg is unusually cheap compared with the other, buy it and sell
 the hedge, then close when the gap closes.

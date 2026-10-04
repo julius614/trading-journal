@@ -1,7 +1,12 @@
 # Pairs Trading EURUSD vs GBPUSD (H1, Kalman hedge ratio) — Strategy Review
 
 - **Source:** the user's pivot from the triangle (2026-10-03). **Code:** [`bots/statarb_3leg/`](../../../bots/statarb_3leg/).
-- **Status (2026-10-03):** default pair is now AUDUSD/NZDUSD with a 48-bar time stop and
+- **Status: SHELVED (2026-10-04).** It's validated but slow: about +1%/yr at 1×, with
+  about a 2% chance of passing a 10% challenge within 12 months at the safe 2× size
+  (section 8, [prop-firm-plan.md](prop-firm-plan.md)). The code and settings are kept as
+  they are. Possible later use: a slow FTMO Swing account, or a low-correlation second
+  strategy next to a stronger one.
+- **Earlier status (2026-10-03):** default pair is now AUDUSD/NZDUSD with a 48-bar time stop and
   the cointegration gate off. Out of sample on AUD/NZD 2018–2026: **+8.2%, PF 1.38, 7/9
   winning years** (section 6). The original 10-day-stop version lost 3.3% on EUR/GBP
   2014–2020 (section 2).

@@ -19,7 +19,7 @@ its source, how it was captured, and the key takeaways I can apply in my trading
 | 15-min ORB "the MAX way" | Max Options Trading (YouTube) | [strategies/orb-15min-max/README.md](strategies/orb-15min-max/README.md) | [strategies/orb_15min/](../strategies/orb_15min/) |
 | AMD session liquidity sweep (FX bot) | User spec (ICT-style AMD) | [strategies/amd-session-sweep/README.md](strategies/amd-session-sweep/README.md) | [bots/amd_fx/](../bots/amd_fx/) |
 | Triangular stat-arb (EURUSD/GBPUSD/EURGBP) — retired | User spec | [strategies/statarb-triangle/README.md](strategies/statarb-triangle/README.md) | git commit `e5b753f` |
-| Pairs trading AUDUSD/NZDUSD & EURUSD/GBPUSD (H1, Kalman hedge ratio, cointegration gate) | User spec | [strategies/pairs-eurusd-gbpusd/README.md](strategies/pairs-eurusd-gbpusd/README.md) | [bots/statarb_3leg/](../bots/statarb_3leg/) — prop-firm plan: [prop-firm-plan.md](strategies/pairs-eurusd-gbpusd/prop-firm-plan.md) |
+| Pairs trading AUDUSD/NZDUSD & EURUSD/GBPUSD (H1, Kalman hedge ratio) — shelved: real but slow (~1%/yr) | User spec | [strategies/pairs-eurusd-gbpusd/README.md](strategies/pairs-eurusd-gbpusd/README.md) | [bots/statarb_3leg/](../bots/statarb_3leg/) — prop-firm plan: [prop-firm-plan.md](strategies/pairs-eurusd-gbpusd/prop-firm-plan.md) |
 
 ## Conventions
 
