@@ -1,8 +1,12 @@
 """Download bar history from your MetaTrader 5 terminal into backtest-ready CSVs (UTC).
 
     python -m bots.amd_fx.download_history --symbols EURUSD GBPUSD --timeframe M5 --bars 300000
+    python -m bots.amd_fx.download_history --list "*500*"        # find your broker's names
+    python -m bots.amd_fx.download_history --symbols US500 XAUUSD --timeframe M5 \
+        --bars 400000 --out-dir data/intraday --gzip                # + <SYMBOL>_spec.json
 
-Files go to data/amd_fx/<SYMBOL>_<TF>.csv (replaced on each download). How far back you get depends on the terminal's
+Files go to data/amd_fx/<SYMBOL>_<TF>.csv (or --out-dir), replaced on each download, with
+<SYMBOL>_spec.json beside them (point size, contract size, currency). How far back you get depends on the terminal's
 history and on Tools > Options > Charts > "Max bars in chart" (set it to Unlimited).
 Needs Windows, the MT5 terminal running and logged in, and the MetaTrader5 package.
 """
@@ -10,6 +14,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import dataclasses
+import json
+from pathlib import Path
 from typing import List, Optional
 
 import pandas as pd
@@ -29,8 +36,23 @@ def check_utc_sanity(symbol: str, df: pd.DataFrame) -> None:
             "and try again.")
 
 
-async def download(symbols: List[str], timeframe: str, bars: int) -> None:
+async def list_symbols(pattern: str) -> None:
+    broker = MT5Broker(load_config().broker)
+    await broker.connect()
+    try:
+        names = await broker.list_symbols(pattern)
+        print(f"{len(names)} symbol(s) match {pattern!r}:")
+        for n in names:
+            print(f"  {n}")
+    finally:
+        await broker.shutdown()
+
+
+async def download(symbols: List[str], timeframe: str, bars: int,
+                   out_dir: Optional[str] = None, gzip: bool = False) -> None:
     cfg = load_config()
+    if out_dir:
+        cfg = dataclasses.replace(cfg, data_dir=out_dir)
     broker = MT5Broker(cfg.broker)
     await broker.connect()
     print(f"Broker server time setting: {broker.timezone_mode}")
@@ -41,6 +63,14 @@ async def download(symbols: List[str], timeframe: str, bars: int) -> None:
             check_utc_sanity(symbol, df)
             fetcher.history_path(symbol, timeframe).unlink(missing_ok=True)   # replace, don't merge
             path = fetcher.save_history(symbol, df, timeframe)
+            if gzip:   # ~5x smaller, so years of M5 data fit in git
+                gz = Path(f"{path}.gz")
+                pd.read_csv(path).to_csv(gz, index=False, compression="gzip")
+                Path(path).unlink()
+                path = gz
+            spec = await broker.symbol_spec(symbol)
+            spec_path = Path(path).with_name(f"{symbol}_spec.json")
+            spec_path.write_text(json.dumps(spec, indent=2))
             print(f"{symbol}: {len(df)} bars {df.index[0]} -> {df.index[-1]} saved to {path}")
     finally:
         await broker.shutdown()
@@ -49,10 +79,17 @@ async def download(symbols: List[str], timeframe: str, bars: int) -> None:
 def main(argv: Optional[List[str]] = None) -> None:
     p = argparse.ArgumentParser(description="Download MT5 history to CSV (UTC)")
     p.add_argument("--symbols", nargs="+", default=["EURUSD", "GBPUSD"])
-    p.add_argument("--timeframe", default="M5", choices=["M1", "M5", "M15", "H1", "D1"])
+    p.add_argument("--timeframe", default="M5", choices=["M1", "M5", "M15", "M30", "H1", "D1"])
     p.add_argument("--bars", type=int, default=300_000, help="~300k M5 bars = ~4 years")
+    p.add_argument("--out-dir", help="folder for the CSVs (default data/amd_fx)")
+    p.add_argument("--gzip", action="store_true", help="save as <SYMBOL>_<TF>.csv.gz")
+    p.add_argument("--list", metavar="PATTERN",
+                   help='only list broker symbol names matching e.g. "*500*", "XAU*", "*"')
     a = p.parse_args(argv)
-    asyncio.run(download(a.symbols, a.timeframe, a.bars))
+    if a.list:
+        asyncio.run(list_symbols(a.list))
+        return
+    asyncio.run(download(a.symbols, a.timeframe, a.bars, a.out_dir, a.gzip))
 
 
 if __name__ == "__main__":

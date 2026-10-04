@@ -258,6 +258,21 @@ class MT5Broker(Broker):
                           volume_min=float(i.volume_min), volume_max=float(i.volume_max),
                           volume_step=float(i.volume_step))
 
+    async def symbol_spec(self, symbol: str) -> Dict[str, Any]:
+        """Contract details needed to turn prices and spreads into money (for research)."""
+        i = await self._ensure_symbol(symbol)
+        return {"symbol": symbol, "description": str(getattr(i, "description", "")),
+                "digits": int(i.digits), "point": float(i.point),
+                "tick_size": float(i.trade_tick_size), "tick_value": float(i.trade_tick_value),
+                "contract_size": float(i.trade_contract_size),
+                "currency_base": str(i.currency_base), "currency_profit": str(i.currency_profit),
+                "volume_min": float(i.volume_min), "volume_step": float(i.volume_step)}
+
+    async def list_symbols(self, pattern: str = "*") -> List[str]:
+        """Broker symbol names matching an MT5 group pattern, e.g. "*500*" or "XAU*"."""
+        found = await self._call("symbols_get", group=pattern)
+        return sorted(s.name for s in (found or ()))
+
     @property
     def timezone_mode(self) -> str:
         return self._tz_mode
