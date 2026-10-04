@@ -44,6 +44,7 @@ DEFAULT_MAP: Dict[str, str] = {
     "USDJPY": "USDJPY", "AUDUSD": "AUDUSD", "USDCAD": "USDCAD",
 }
 EST_OFFSET = pd.Timedelta(hours=5)       # HistData: fixed UTC-5
+MAX_GAP = 0.02                           # larger median price gap = a different market
 
 
 def parse_m1(text: str) -> pd.DataFrame:
@@ -91,6 +92,10 @@ def build_symbol(symbol: str, code: str, raw_dir: Path, broker_dir: Path,
     overlap = broker.index.intersection(hist.index)
     gap = (float(np.median(np.abs(hist.loc[overlap, "close"] / broker.loc[overlap, "close"] - 1)))
            if len(overlap) else float("nan"))
+    if np.isfinite(gap) and gap > MAX_GAP:
+        raise ValueError(
+            f"HistData {code} and broker {symbol} differ by {gap:.0%} - not the same market "
+            f"(e.g. an ETF instead of the index). Download the broker's real symbol instead.")
     prof = spread_profile(broker, float(spec["point"]))
     hist["spread"] = prof.to_numpy()[hist.index.dayofweek * 24 + hist.index.hour]
     late = broker.copy()

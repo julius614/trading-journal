@@ -76,3 +76,15 @@ def test_parse_metatrader_format():
            "2014.01.02,09:31,1845.750000,1846.250000,1845.500000,1846.000000,0\n"
     df = hd.parse_m1(text)
     assert str(df.index[0]) == "2014-01-02 14:30:00+00:00" and df["close"].iloc[1] == 1846.0
+
+
+def test_refuses_a_different_market(tmp_path):
+    raw, broker_dir, out = tmp_path / "raw", tmp_path / "b", tmp_path / "o"
+    raw.mkdir(); broker_dir.mkdir()
+    (raw / "DAT_ASCII_GRXEUR_M1_2024.csv").write_text(_m1_text(n=60, px=24000.0))
+    idx = pd.date_range("2024-01-02 14:30", periods=12, freq="5min", tz="UTC")
+    pd.DataFrame({"datetime": idx, "open": 45.0, "high": 45.1, "low": 44.9, "close": 45.0,
+                  "volume": 1, "spread": 2}).to_csv(broker_dir / "DAX_M5.csv.gz", index=False)
+    (broker_dir / "DAX_spec.json").write_text(json.dumps({"point": 0.01}))
+    with pytest.raises(ValueError, match="not the same market"):
+        hd.build_symbol("DAX", "GRXEUR", raw, broker_dir, out)
