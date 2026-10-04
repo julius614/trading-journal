@@ -1,0 +1,13 @@
+{
+  "symbol": "EURGBP",
+  "description": "Euro vs Pound Sterling",
+  "digits": 5,
+  "point": 1e-05,
+  "tick_size": 1e-05,
+  "tick_value": 1.176636701651998,
+  "contract_size": 100000.0,
+  "currency_base": "EUR",
+  "currency_profit": "GBP",
+  "volume_min": 0.01,
+  "volume_step": 0.01
+}
