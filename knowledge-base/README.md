@@ -12,6 +12,11 @@ its source, how it was captured, and the key takeaways I can apply in my trading
 | Quantitative Developer | [QuantInsti — Quantitative Developer Guide: Salary, Roadmap, Tools & Career Tips](https://www.quantinsti.com/articles/quantitative-developer/) | [quantitative-developer/README.md](quantitative-developer/README.md) |
 | EPAT (course) | [QuantInsti — Executive Programme in Algorithmic Trading](https://www.quantinsti.com/epat) | [epat/README.md](epat/README.md) |
 
+## Tools
+- **AI trading stack skill** (`.claude/skills/ai-trading-stack/`): OpenBB data, 63 investor
+  lenses (investorskills), TradingAgents bull/bear debate, Vibe-Trading backtests/brokers. Every
+  idea from it still goes through the validation gate (`references/validation-gate.md`).
+
 ## Strategies
 
 | Strategy | Source | Notes | Code |
