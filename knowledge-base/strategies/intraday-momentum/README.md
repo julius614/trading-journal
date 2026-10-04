@@ -51,6 +51,19 @@ so there is nothing to curve-fit.
   variant must keep PF > 1. This is a check only; nothing is re-chosen from it.
 - **If nothing qualifies,** the verdict says so and **no bot is built.**
 
+### Data-source amendment (2026-10-04, before any strategy was run)
+- **The problem:** the broker's MT5 server keeps only about 100,000 M5 bars, roughly 1.5
+  years for most symbols. That is too short for a 60/20/20 split.
+- **Prices:** these now come from **Dukascopy's free 1-minute BID candles** (UTC),
+  resampled to M5, from 2019 on.
+- **Costs:** still the **broker's own spreads**, as the median for each UTC hour of the
+  week, measured from the broker's M5 data.
+- **Price scale:** matched to the broker's prices. The median gap is printed and stored in
+  each `_spec.json`.
+- **Unchanged:** the rules, parameters and pass/fail thresholds.
+- **New risk:** Dukascopy's index CFDs and your broker's can differ slightly at the open.
+  The hold-out period can be re-checked on the broker's own 1.5 years.
+
 ## 3. How this test could still lie
 - **History length:**
   - MT5 brokers often keep only 2–5 years of M5 data for CFDs.

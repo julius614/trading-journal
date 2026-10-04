@@ -10,6 +10,7 @@ pre-declared "strong" test.
 | File | Role |
 |---|---|
 | `research/sessions.py` | Market sessions (New York / Frankfurt / London, DST-aware), M5 bars into days |
+| `research/dukascopy.py` | Long M5 history from Dukascopy, broker spreads attached |
 | `research/data.py` | Loads `<SYMBOL>_M5.csv` and `<SYMBOL>_spec.json`; MT5 spread to price |
 | `research/strategies.py` | NA (noise area), LH (late half hour), OR (5-min opening range); fixed parameters |
 | `research/engine.py` | Costs (spread, slippage, FX commission) and statistics |
@@ -44,16 +45,23 @@ python -m bots.amd_fx.download_history --timeframe M5 --bars 400000 --out-dir da
 Each symbol prints its date range. **Paste that output back to me.** Three or more years
 per symbol is good; under two years is too short to judge.
 
-**4. Send me the data**
+**4. Get longer history from Dukascopy** (your broker keeps only ~1.5 years of M5).
+This uses your broker files from step 3 for spreads and the price scale, needs no MT5,
+and takes roughly 30–60 minutes. If it stops, run it again; it resumes.
 ```powershell
-git add data/intraday
+python -m bots.intraday.research.dukascopy --from 2019-01-01
+```
+
+**5. Send me the data**
+```powershell
+git add data/intraday data/intraday_duka
 git commit -m "Add M5 data for the intraday race"
 git push
 ```
 
 I then run the race once and report the verdict:
 ```powershell
-python -m bots.intraday.research.protocol --data-dir data/intraday
+python -m bots.intraday.research.protocol --data-dir data/intraday_duka
 ```
 
 ## Tests
