@@ -122,11 +122,33 @@ class AppConfig:
     def broker_symbol(self, symbol: str) -> str:
         return self.symbol_map.get(symbol, symbol)
 
+    @property
+    def conversion_symbol(self) -> Optional[str]:
+        """Extra price needed to convert USD amounts into the account currency, e.g. EURUSD
+        for a EUR account; None when the legs' own prices are enough."""
+        return conversion_pair(self.risk.account_currency, self.pair)
+
+    @property
+    def price_symbols(self) -> Tuple[str, ...]:
+        """Symbols whose ticks the bot needs: the two legs, plus the conversion pair."""
+        return self.pair + ((self.conversion_symbol,) if self.conversion_symbol else ())
+
+
+USD_BASE_FIRST = {"EUR", "GBP", "AUD", "NZD", "XAU", "XAG"}   # quoted as XXXUSD, others USDXXX
+
+
+def conversion_pair(account_ccy: str, pair: Tuple[str, str]) -> Optional[str]:
+    """The FX pair linking the account currency to USD (EURUSD, USDJPY...), or None when
+    the account is in USD or in one leg's base currency."""
+    if account_ccy == "USD" or account_ccy in {s[:3] for s in pair}:
+        return None
+    return f"{account_ccy}USD" if account_ccy in USD_BASE_FIRST else f"USD{account_ccy}"
+
 
 def validate_pair(pair: Tuple[str, str], account_ccy: str) -> None:
-    """Both legs must be 4-decimal pairs quoted in USD (EURUSD, GBPUSD, AUDUSD, NZDUSD...),
-    and the account currency must be USD or one leg's base currency, so every amount can
-    be converted with the two legs' own prices."""
+    """Both legs must be 4-decimal pairs quoted in USD (EURUSD, GBPUSD, AUDUSD, NZDUSD...).
+    Any account currency works: if it isn't USD or a leg's base currency, the bot also
+    reads the pair linking it to USD (EURUSD, USDJPY, ...) to convert."""
     if len(pair) != 2 or pair[0] == pair[1]:
         raise ValueError(f"pair must be two different symbols, got {pair}")
     for s in pair:
@@ -134,9 +156,8 @@ def validate_pair(pair: Tuple[str, str], account_ccy: str) -> None:
             raise ValueError(f"unsupported symbol {s!r}")
         if s[3:] != "USD":
             raise ValueError(f"{s}: both legs must be quoted in USD (e.g. EURUSD, GBPUSD)")
-    allowed = {"USD"} | {s[:3] for s in pair}
-    if account_ccy not in allowed:
-        raise ValueError(f"account currency {account_ccy} must be one of {sorted(allowed)}")
+    if len(account_ccy) != 3 or not account_ccy.isalpha():
+        raise ValueError(f"account currency must be a 3-letter code, got {account_ccy!r}")
 
 
 def _load_dotenv() -> None:
@@ -163,9 +184,12 @@ def load_config() -> AppConfig:
     raw_pair = os.getenv("STATARB_PAIR", ",".join(DEFAULT_PAIR))
     pair = tuple(s.strip().upper() for s in raw_pair.split(","))
     suffix = os.getenv("STATARB_SYMBOL_SUFFIX", "")
-    symbol_map = {s: s + suffix for s in pair} if suffix else {}
+    acct = os.getenv("STATARB_ACCOUNT_CCY", "USD").upper()
+    conv = conversion_pair(acct, pair)  # type: ignore[arg-type]
+    extra = (conv,) if conv else ()
+    symbol_map = {s: s + suffix for s in pair + extra} if suffix else {}
     risk = RiskConfig(
-        account_currency=os.getenv("STATARB_ACCOUNT_CCY", "USD").upper(),
+        account_currency=acct,
         notional_equity_mult=float(os.getenv("STATARB_NOTIONAL_MULT", "1.0")),
         risk_per_trade=_opt_float("STATARB_RISK_PER_TRADE"),
         emergency_sl_pips=_opt_float("STATARB_EMERGENCY_SL_PIPS", "250"),
@@ -181,4 +205,6 @@ def load_config() -> AppConfig:
     )
     return AppConfig(broker=broker, risk=risk, filters=filters, strategy=strategy,
                      pair=pair,  # type: ignore[arg-type]
-                     symbol_map=symbol_map, news_csv=os.getenv("STATARB_NEWS_CSV") or None)
+                     symbol_map=symbol_map, news_csv=os.getenv("STATARB_NEWS_CSV") or None,
+                     require_news_calendar=os.getenv("STATARB_REQUIRE_NEWS_CALENDAR", "1")
+                     .strip().lower() not in ("0", "false", "no", "off"))

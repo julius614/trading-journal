@@ -268,6 +268,15 @@ class MT5Broker(Broker):
                 "currency_base": str(i.currency_base), "currency_profit": str(i.currency_profit),
                 "volume_min": float(i.volume_min), "volume_step": float(i.volume_step)}
 
+    async def account_summary(self) -> Dict[str, Any]:
+        """Login, server, demo/real, currency, balance and equity of the connected account."""
+        i = await self._call("account_info")
+        if i is None:
+            raise BrokerError(f"account_info failed: {await self._last_error()}")
+        return {"login": i.login, "server": i.server, "demo": i.trade_mode == 0,
+                "currency": str(getattr(i, "currency", "")), "balance": float(i.balance),
+                "equity": float(i.equity)}
+
     async def list_symbols(self, pattern: str = "*") -> List[str]:
         """Broker symbol names matching an MT5 group pattern, e.g. "*500*" or "XAU*"."""
         found = await self._call("symbols_get", group=pattern)

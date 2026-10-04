@@ -124,10 +124,15 @@ python -m bots.statarb_3leg.backtest AUDUSD=data/amd_fx/AUDUSD_H1.csv NZDUSD=dat
 python -m bots.statarb_3leg.portfolio --data-dir data/amd_fx       # all 6 pairs + challenge odds
 ```
 
-### 3. Live on a demo account (only if the backtest justifies it)
-1. Copy `bots/statarb_3leg/.env.example` to `.env` in the repo root and fill it in.
-2. Create a current news calendar CSV (format: `news_calendar.example.csv`).
+### 3. Live on a demo account
+Full step-by-step guide: `knowledge-base/strategies/pairs-eurusd-gbpusd/demo-runbook.md`.
+1. Create `.env` in the repo root (see `.env.example`). `STATARB_ACCOUNT_CCY` must match
+   the account currency; any currency works (EUR accounts also read EURUSD to convert).
+2. `python -m bots.statarb_3leg.main --check` places no orders and must end with READY.
 3. `python -m bots.statarb_3leg.main --live`
+
+A current news calendar CSV is required, unless `STATARB_REQUIRE_NEWS_CALENDAR=0`
+(demo only).
 
 Each leg gets a wide **emergency stop** at the broker (250 pips; `STATARB_EMERGENCY_SL_PIPS`)
 in case the PC or connection dies. If one leg disappears (its stop fired, or it was closed by

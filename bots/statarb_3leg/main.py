@@ -227,6 +227,12 @@ def setup_logging(log_dir: str, level: str = "INFO") -> None:
 
 def load_news(cfg: AppConfig, live: bool) -> NewsCalendar:
     cal = NewsCalendar.from_csv(cfg.news_csv) if cfg.news_csv else NewsCalendar()
+    if live and not cfg.require_news_calendar:
+        last = cal.last_event_time()
+        if last is None or last < datetime.now(timezone.utc):
+            logger.warning("NEWS BLACKOUTS ARE OFF (STATARB_REQUIRE_NEWS_CALENDAR=0, no current "
+                           "calendar). Fine for a demo; turn it on before a prop or real account.")
+        return cal
     if live and cfg.require_news_calendar:
         last = cal.last_event_time()
         if last is None or last < datetime.now(timezone.utc):
@@ -235,11 +241,93 @@ def load_news(cfg: AppConfig, live: bool) -> NewsCalendar:
     return cal
 
 
+async def preflight(cfg: AppConfig, broker: Broker, echo=print) -> bool:
+    """Read-only start-up check for a live/demo account. Places no orders."""
+    problems: List[str] = []
+    await broker.connect()
+    try:
+        acct = await broker.account_summary()
+        echo(f"Account {acct['login']} on {acct['server']} ({'DEMO' if acct['demo'] else 'REAL'})"
+             f", currency {acct['currency']}, balance {acct['balance']:.2f}, "
+             f"equity {acct['equity']:.2f}")
+        if not acct["demo"]:
+            problems.append("this is a REAL-money account - use a demo first")
+        if acct["currency"] and acct["currency"] != cfg.risk.account_currency:
+            problems.append(f"account currency is {acct['currency']} but STATARB_ACCOUNT_CCY="
+                            f"{cfg.risk.account_currency} - set STATARB_ACCOUNT_CCY="
+                            f"{acct['currency']} in .env")
+        infos, spreads = {}, {}
+        for sym in cfg.price_symbols:
+            try:
+                info = await broker.symbol_info(cfg.broker_symbol(sym))
+                tick = await broker.get_tick(cfg.broker_symbol(sym))
+            except BrokerError as exc:
+                problems.append(f"symbol {cfg.broker_symbol(sym)}: {exc}")
+                continue
+            infos[sym] = info
+            spreads[sym] = (tick.ask - tick.bid) / 0.0001
+            echo(f"  {cfg.broker_symbol(sym)}: bid {tick.bid} ask {tick.ask}, spread "
+                 f"{spreads[sym]:.1f} pips, lots {info.volume_min}-{info.volume_max} "
+                 f"step {info.volume_step}")
+        if problems:
+            return _report(problems, echo)
+        bot = PairsBot(cfg, broker, NewsCalendar())
+        await bot.warmup()
+        out = bot.last_output
+        n = cfg.strategy.history_bars
+        echo(f"History: warm-up loaded, Kalman warm={bot.kalman.warm}, beta "
+             f"{bot.kalman.beta:.3f}, last bar {bot.last_bar}, current Z "
+             f"{out.z if out else float('nan'):+.2f} (trades when |Z| > {cfg.strategy.entry_z})")
+        if not bot.kalman.warm:
+            problems.append(f"not enough H1 history for warm-up (asked for {n} bars)")
+        mids = mids_from_ticks(await bot.feed.ticks())
+        equity = acct["equity"]
+        stop_move = (cfg.strategy.stop_z_extra or 2.0) * (out.std if out else 0.0)
+        try:
+            plans = balance_legs(1, equity, mids, infos, cfg.risk, cfg.y, cfg.x,
+                                 bot.kalman.beta, stop_move or None)
+            echo("Size if a trade opened now: " + ", ".join(
+                f"{p.lots:.2f} lots {p.symbol} ({'BUY' if p.side == 1 else 'SELL'})"
+                for p in plans) if plans else "Size: below the minimum lot - equity too small")
+        except (ValueError, KeyError) as exc:
+            problems.append(f"sizing failed: {exc}")
+        r, s = cfg.risk, cfg.strategy
+        echo(f"Risk: notional x{r.notional_equity_mult:g}"
+             + (f", fixed risk {r.risk_per_trade:.2%}" if r.risk_per_trade else "")
+             + f", emergency stop {r.emergency_sl_pips or 'off'} pips/leg, Prop Shield "
+               f"{r.daily_loss_limit:.0%}/day, flat before weekend: "
+               f"{'yes' if s.flat_before_weekend else 'no'}")
+        cal = NewsCalendar.from_csv(cfg.news_csv) if cfg.news_csv else NewsCalendar()
+        last = cal.last_event_time()
+        current = last is not None and last >= datetime.now(timezone.utc)
+        echo(f"News calendar: {'current, ' + str(len(cal)) + ' events' if current else 'none'}"
+             + ("" if current or cfg.require_news_calendar
+                else " - blackouts OFF (allowed: STATARB_REQUIRE_NEWS_CALENDAR=0)"))
+        if not current and cfg.require_news_calendar:
+            problems.append("no current news calendar - add one (STATARB_NEWS_CSV) or, for a "
+                            "demo only, set STATARB_REQUIRE_NEWS_CALENDAR=0")
+    finally:
+        await broker.shutdown()
+    return _report(problems, echo)
+
+
+def _report(problems: List[str], echo) -> bool:
+    if problems:
+        echo("\nNOT READY:")
+        for p in problems:
+            echo(f"  - {p}")
+        return False
+    echo("\nREADY - start the bot with:  python -m bots.statarb_3leg.main --live")
+    return True
+
+
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="2-leg H1 pairs-trading bot")
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--live", action="store_true", help="trade through MetaTrader 5")
     mode.add_argument("--paper", nargs=2, metavar="SYMBOL=CSV", help="replay two H1 CSVs")
+    mode.add_argument("--check", action="store_true",
+                      help="check the MT5 setup and show what the bot would trade (no orders)")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args(argv)
 
@@ -247,6 +335,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 async def _amain(args: argparse.Namespace) -> None:
     cfg = load_config()
     setup_logging(cfg.log_dir, args.log_level)
+    if args.check:
+        ok = await preflight(cfg, MT5Broker(cfg.broker))
+        if not ok:
+            raise SystemExit(1)
+        return
     if args.paper:
         from .backtest import run_replay
         await run_replay(cfg, dict(x.split("=", 1) for x in args.paper),

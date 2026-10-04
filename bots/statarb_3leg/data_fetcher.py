@@ -38,7 +38,8 @@ class PairFeed:
         return align_closes(frames, self.cfg.y, self.cfg.x)
 
     async def ticks(self) -> Dict[str, Tick]:
-        return {s: await self.broker.get_tick(self.cfg.broker_symbol(s)) for s in self.cfg.pair}
+        return {s: await self.broker.get_tick(self.cfg.broker_symbol(s))
+                for s in self.cfg.price_symbols}
 
 
 def load_leg_csv(path: str | Path) -> pd.DataFrame:

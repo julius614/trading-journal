@@ -66,7 +66,8 @@ def test_pair_validation():
     validate_pair(("AUDUSD", "NZDUSD"), "USD")
     with pytest.raises(ValueError):
         validate_pair(("EURUSD", "EURGBP"), "USD")       # EURGBP isn't quoted in USD
+    validate_pair(("EURUSD", "GBPUSD"), "JPY")          # any account currency (via USDJPY)
     with pytest.raises(ValueError):
-        validate_pair(("EURUSD", "GBPUSD"), "JPY")
+        validate_pair(("EURUSD", "GBPUSD"), "JP")
     with pytest.raises(ValueError):
         AppConfig(pair=("EURUSD", "EURUSD"))
