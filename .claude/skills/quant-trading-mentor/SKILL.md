@@ -23,6 +23,7 @@ repo root).
 | Triangular stat-arb review (retired, no edge) | `knowledge-base/strategies/statarb-triangle/README.md` |
 | Pairs trading H1 (AUDUSD/NZDUSD default, EURUSD/GBPUSD; Kalman hedge ratio, 48-bar stop, Engle–Granger gate) review and bot | `knowledge-base/strategies/pairs-eurusd-gbpusd/README.md`, `knowledge-base/strategies/pairs-eurusd-gbpusd/prop-firm-plan.md` (prop-firm rules and sizing), `bots/statarb_3leg/README.md` |
 | Intraday momentum race (noise area, late half hour, 5-min ORB; indices/gold/oil/FX, pre-declared protocol) | `knowledge-base/strategies/intraday-momentum/README.md`, `bots/intraday/README.md` |
+| Daily trend-following across many markets (pre-declared test) | `knowledge-base/strategies/trend-following/README.md` |
 
 ## Ground rules
 
