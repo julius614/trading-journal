@@ -121,8 +121,14 @@ def fetch_days(inst: str, days: List[date], cache: Path, workers: int,
         except DownloadError:
             return None
 
+    parts: List[Optional[pd.DataFrame]] = []
     with ThreadPoolExecutor(workers) as pool:
-        parts = list(pool.map(safe, days))
+        for i, part in enumerate(pool.map(safe, days), 1):
+            parts.append(part)
+            if i % 100 == 0 or i == len(days):
+                bad = sum(p is None for p in parts)
+                print(f"    {inst}: {i}/{len(days)} days ({days[i - 1]})"
+                      + (f", {bad} failed so far" if bad else ""), flush=True)
     failed = [i for i, p in enumerate(parts) if p is None]
     for i in failed:
         parts[i] = safe(days[i])
