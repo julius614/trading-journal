@@ -77,7 +77,15 @@ class PairsBot:
 
     async def warmup(self) -> None:
         """Feed recent history to the filter without trading (live start-up)."""
-        bars = await self.feed.closed_bars(self.cfg.strategy.history_bars)
+        bars = None
+        for count in (self.cfg.strategy.history_bars, 20_000, 5_000):
+            try:
+                bars = await self.feed.closed_bars(count)
+                break
+            except BrokerError as exc:
+                logger.warning("Warm-up with {} bars failed ({}); trying fewer", count, exc)
+        if bars is None:
+            raise BrokerError("could not load warm-up history")
         for ts, row in bars.iterrows():
             self.last_output = self.kalman.update(row["log_y"], row["log_x"])
             self.window_y.append(row["log_y"])

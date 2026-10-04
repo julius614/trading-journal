@@ -119,3 +119,25 @@ def test_preflight_lists_problems():
                                            require_news_calendar=False),
                        FakeBroker(missing={"NZDUSD"}))
     assert not ok2 and "symbol NZDUSD" in out2
+
+
+def test_warmup_uses_long_history_and_falls_back():
+    asked = []
+
+    class Picky(FakeBroker):
+        async def get_rates(self, s, tf, count):
+            asked.append(count)
+            if count > 1500:
+                raise BrokerError("Call failed")
+            return await super().get_rates(s, tf, count)
+
+    cfg = AppConfig(risk=RiskConfig(account_currency="EUR"))
+    assert cfg.strategy.history_bars >= 50_000
+    bot = m.PairsBot(cfg, Picky(), m.NewsCalendar())
+    with pytest.raises(BrokerError):
+        asyncio.run(bot.warmup())                     # 50k, 20k, 5k all refused
+    assert asked[0] == cfg.strategy.history_bars and 5_000 in asked
+    asked.clear()
+    bot2 = m.PairsBot(cfg, FakeBroker(), m.NewsCalendar())
+    asyncio.run(bot2.warmup())
+    assert bot2.kalman.warm                           # 1600 fake bars all used

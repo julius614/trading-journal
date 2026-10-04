@@ -40,7 +40,10 @@ class StrategyConfig:
     r_halflife_bars: int = 500             # half-life of the adaptive noise estimate
     clip_sigma: Optional[float] = 4.0      # cap outliers when updating the noise estimate
     warmup_bars: int = 500                 # bars fed to the filter before any trading
-    history_bars: int = 1500               # bars pulled at start-up for warm-up
+    # Bars pulled at start-up for warm-up. The filter adapts slowly (q ~ 1e-4), so it needs
+    # the same long history the backtest had: 1,500 bars left beta at 0.45 vs 0.77 on the
+    # full 2018-2026 history. Asks for 50,000 and falls back to fewer if the server refuses.
+    history_bars: int = 50_000
     # rolling Engle-Granger + half-life gate. OFF by default: on 250 H1 bars it almost
     # never passes (5 trades in 8 years on AUD/NZD, 7 in 6 years on EUR/GBP) and it did
     # not improve the few trades it allowed. See the strategy note before turning it on.
