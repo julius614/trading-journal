@@ -4,8 +4,8 @@ own recent M5 data (the broker/MT5 server keeps only ~1.5 years).
     python -m bots.intraday.research.histdata
 
 1. Download from https://www.histdata.com/download-free-forex-data/?/ascii/1-minute-bar-quotes
-   the yearly "Generic ASCII / 1 Minute Bar Quotes" zip of each market for 2019..2025,
-   e.g. HISTDATA_COM_ASCII_SPXUSD_M12019.zip, and put the zips (unopened) in
+   the yearly 1-minute zip of each market for 2019..2025 (Generic ASCII or MetaTrader
+   format, e.g. HISTDATA_COM_ASCII_SPXUSD_M12019.zip), and put the zips (unopened) in
    data/histdata_raw/.
 2. Run this. It reads the broker files in data/intraday (<SYMBOL>_M5.csv.gz + spec) and
    writes data/intraday_hd/<SYMBOL>_M5.csv.gz + spec.
@@ -47,10 +47,19 @@ EST_OFFSET = pd.Timedelta(hours=5)       # HistData: fixed UTC-5
 
 
 def parse_m1(text: str) -> pd.DataFrame:
-    """HistData generic ASCII M1: 'YYYYMMDD HHMMSS;open;high;low;close;volume' -> UTC."""
-    df = pd.read_csv(io.StringIO(text), sep=";", header=None,
-                     names=["dt", "open", "high", "low", "close", "volume"])
-    t = pd.to_datetime(df["dt"].astype(str), format="%Y%m%d %H%M%S")
+    """A HistData 1-minute file -> UTC bars. Both formats are accepted:
+    Generic ASCII 'YYYYMMDD HHMMSS;open;high;low;close;volume' and
+    MetaTrader     'YYYY.MM.DD,HH:MM,open,high,low,close,volume'."""
+    first = text.lstrip()[:40]
+    if ";" in first:
+        df = pd.read_csv(io.StringIO(text), sep=";", header=None,
+                         names=["dt", "open", "high", "low", "close", "volume"])
+        t = pd.to_datetime(df["dt"].astype(str), format="%Y%m%d %H%M%S")
+    else:
+        df = pd.read_csv(io.StringIO(text), sep=",", header=None,
+                         names=["d", "t", "open", "high", "low", "close", "volume"])
+        t = pd.to_datetime(df["d"].astype(str) + " " + df["t"].astype(str),
+                           format="%Y.%m.%d %H:%M")
     df.index = pd.DatetimeIndex(t + EST_OFFSET).tz_localize("UTC")
     return df[["open", "high", "low", "close", "volume"]].astype(float)
 
@@ -63,7 +72,7 @@ def read_raw(raw_dir: Path, code: str) -> pd.DataFrame:
             for name in zf.namelist():
                 if name.lower().endswith(".csv"):
                     parts.append(parse_m1(zf.read(name).decode("utf-8", "replace")))
-    for f in sorted(raw_dir.glob(f"DAT_ASCII_{code}_M1_*.csv")):
+    for f in sorted(raw_dir.glob(f"DAT_*_{code}_M1_*.csv")):
         parts.append(parse_m1(f.read_text()))
     if not parts:
         raise FileNotFoundError(f"no HistData files for {code} in {raw_dir}")

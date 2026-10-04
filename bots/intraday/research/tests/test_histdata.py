@@ -69,3 +69,10 @@ def test_thin_broker_day_filled_from_histdata(tmp_path):
     day3 = df.loc["2024-01-03"]
     assert len(day3) == 12 and (day3["close"] > 100).all()     # HistData's whole day
     assert (df.loc["2024-01-04", "close"] == 1.0).all()         # broker's full day kept
+
+
+def test_parse_metatrader_format():
+    text = "2014.01.02,09:30,1845.250000,1846.000000,1844.500000,1845.750000,0\n" \
+           "2014.01.02,09:31,1845.750000,1846.250000,1845.500000,1846.000000,0\n"
+    df = hd.parse_m1(text)
+    assert str(df.index[0]) == "2014-01-02 14:30:00+00:00" and df["close"].iloc[1] == 1846.0
