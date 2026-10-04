@@ -1,0 +1,13 @@
+{
+  "symbol": "US500",
+  "description": "US SPX 500 Index",
+  "digits": 2,
+  "point": 0.01,
+  "tick_size": 0.01,
+  "tick_value": 0.008886124316879193,
+  "contract_size": 1.0,
+  "currency_base": "USD",
+  "currency_profit": "USD",
+  "volume_min": 0.1,
+  "volume_step": 0.1
+}

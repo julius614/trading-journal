@@ -1,0 +1,13 @@
+{
+  "symbol": "USDJPY",
+  "description": "US Dollar vs Yen",
+  "digits": 3,
+  "point": 0.001,
+  "tick_size": 0.001,
+  "tick_value": 0.5629236000090068,
+  "contract_size": 100000.0,
+  "currency_base": "USD",
+  "currency_profit": "JPY",
+  "volume_min": 0.01,
+  "volume_step": 0.01
+}

@@ -1,0 +1,25 @@
+{
+  "symbol": "USTECH100M",
+  "description": "USTECH100mini",
+  "digits": 1,
+  "point": 0.1,
+  "tick_size": 0.1,
+  "tick_value": 0.1,
+  "contract_size": 1.0,
+  "currency_base": "USD",
+  "currency_profit": "USD",
+  "volume_min": 1.0,
+  "volume_step": 1.0,
+  "source": "histdata:NSXUSD until 2025-04-01, then broker",
+  "median_gap_vs_broker": 0.00102,
+  "broker_gap_days_filled": 15,
+  "histdata_years": [
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ]
+}

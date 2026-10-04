@@ -1,0 +1,13 @@
+{
+  "symbol": "DAX",
+  "description": "Global X DAX Germany ETF",
+  "digits": 2,
+  "point": 0.01,
+  "tick_size": 0.01,
+  "tick_value": 0.01,
+  "contract_size": 1.0,
+  "currency_base": "USD",
+  "currency_profit": "USD",
+  "volume_min": 1.0,
+  "volume_step": 1.0
+}

@@ -1,0 +1,13 @@
+{
+  "symbol": "UK100",
+  "description": "FTSE 100 Index",
+  "digits": 1,
+  "point": 0.1,
+  "tick_size": 0.1,
+  "tick_value": 0.1,
+  "contract_size": 10.0,
+  "currency_base": "GBP",
+  "currency_profit": "GBP",
+  "volume_min": 0.1,
+  "volume_step": 0.1
+}

@@ -1,0 +1,25 @@
+{
+  "symbol": "EURUSD",
+  "description": "Euro vs US Dollar",
+  "digits": 5,
+  "point": 1e-05,
+  "tick_size": 1e-05,
+  "tick_value": 0.8886124316879194,
+  "contract_size": 100000.0,
+  "currency_base": "EUR",
+  "currency_profit": "USD",
+  "volume_min": 0.01,
+  "volume_step": 0.01,
+  "source": "histdata:EURUSD until 2025-05-30, then broker",
+  "median_gap_vs_broker": 0.00024,
+  "broker_gap_days_filled": 7,
+  "histdata_years": [
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ]
+}

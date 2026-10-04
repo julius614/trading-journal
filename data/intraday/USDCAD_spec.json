@@ -1,0 +1,13 @@
+{
+  "symbol": "USDCAD",
+  "description": "US Dollar vs Canadian Dollar",
+  "digits": 5,
+  "point": 1e-05,
+  "tick_size": 1e-05,
+  "tick_value": 0.6236513539470894,
+  "contract_size": 100000.0,
+  "currency_base": "USD",
+  "currency_profit": "CAD",
+  "volume_min": 0.01,
+  "volume_step": 0.01
+}
