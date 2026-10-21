@@ -400,6 +400,10 @@ def comparison(recs: Dict[str, dict], costs, rn_text: str) -> None:
              "Out-of-sample = last 30% of dates, touched once. Each setup's parameters were chosen "
              "on the first 70% only. PASS = OOS expectancy > 0 at costs x1 AND beats the 95th "
              "percentile of 100 random-entry runs.\n\n", md_table(pd.DataFrame(rows)),
+             "\n'Beats random' alone is not enough: random entries pay the same costs, so a "
+             "losing setup can still beat a worse-losing random baseline. Max DD is measured on "
+             "non-compounded equity (100,000 + cumulative P&L), so it can exceed -100% when a "
+             "setup loses more than the starting equity over the test.\n",
              "\n## Not testable with our data\n\n" + "\n".join(f"- **{k}**: {v}" for k, v in NOT_TESTABLE.items()) + "\n"]
     passed = [n for n, r in recs.items() if r.get("verdict") == "PASS"]
     if len(passed) >= 2:
