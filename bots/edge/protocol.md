@@ -96,4 +96,8 @@ only; it cannot pass.
 No live or prop money is used without the user's explicit decision.
 
 ## Amendments
-(none)
+1. (2026-10-22, before any run, from a data-coverage check only.)
+   - **UK100 is removed from C1 and C2.** Its D1 file has only 615 bars over 2020-09 →
+     2026-05, so most trading days are missing and month-end dates would be wrong.
+   - **USTECH100M D1 starts in 2020-06,** so it only contributes to validate and hold-out.
+   - The C1 discovery period therefore has US500 and US30 only.
