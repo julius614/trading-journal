@@ -17,6 +17,21 @@ its source, how it was captured, and the key takeaways I can apply in my trading
   lenses (investorskills), TradingAgents bull/bear debate, Vibe-Trading backtests/brokers. Every
   idea from it still goes through the validation gate (`references/validation-gate.md`).
 
+## Learning knowledge base (paste data, Claude learns)
+
+- **Memory:** [LESSONS.md](LESSONS.md) holds everything learned, with evidence levels.
+  Claude reads it at the start of every session.
+- **Contents:** [INDEX.md](INDEX.md).
+- **How to add:** paste anything in the chat and say "learn this", or drop files in
+  [`inbox/`](../inbox/README.md).
+- **Where things are filed:**
+  - [notes/](notes/README.md) for articles, videos and books;
+  - [ideas/](ideas/README.md) for strategy cards;
+  - [my-trading/](my-trading/README.md) for your own trades;
+  - `data/user/` for price data.
+- **The workflow** is the `kb-learn` skill
+  ([`.claude/skills/kb-learn/SKILL.md`](../.claude/skills/kb-learn/SKILL.md)).
+
 ## Strategies
 
 | Strategy | Source | Notes | Code |
