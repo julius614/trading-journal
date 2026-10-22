@@ -165,11 +165,14 @@ def run_c1(d1, costs, fomc_dates) -> dict:
              "\n## Results by period, costs x0 / x1 / x2\n\n" + md_table(period_table(trades, costs, C1_P)),
              "\n## By part and market (costs x1)\n\n" + md_table(pd.DataFrame(parts)),
              "\n## Calendar years 2019+ (net USD, costs x1)\n\n" + md_table(
-                 years.round(0).rename("net").reset_index().rename(columns={"exit_time": "year"})),
+                 pd.DataFrame({"year": years.index.astype(str), "net": years.round(0).values})),
              "\n## Plateau: TOM shifted one day (validate + hold-out expectancy, x1)\n\n" + md_table(
                  pd.DataFrame([{"entry (from month end)": k[0], "exit (trading day)": k[1],
                                 "exp_R": round(x, 4)} for k, x in shifts.items()])),
              "\n## Buy-and-hold over the hold-out (1x, for scale)\n\n" + md_table(pd.DataFrame(bh)),
+             f"\nRandom-dates null: being long on random days of the same hold-out earned a median "
+             f"{np.median(rnd):,.0f} USD, about the same as the sleeve - so in this sample the "
+             "calendar days added little beyond the market's general rise.\n",
              "\nThe sleeve is in the market about 25% of days (TOM about 5 of 21 days, plus FOMC "
              "days), so it should be compared with buy-and-hold per day held, not in total.\n"]
     return {"name": "C1_calendar", "verdict": verdict, "lines": lines, "trades": trades,
