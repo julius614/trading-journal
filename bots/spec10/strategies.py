@@ -294,11 +294,11 @@ def atr14(h, l, c) -> np.ndarray:
     return pd.Series(tr).rolling(14, min_periods=14).mean().to_numpy()
 
 
-def make_bars(df: pd.DataFrame, step: pd.Timedelta = BAR) -> Bars:
+def make_bars(df: pd.DataFrame, step: pd.Timedelta = BAR, gap_hours: float = 6) -> Bars:
     o, h, l, c = (df[k].to_numpy(dtype=float, copy=True) for k in ("open", "high", "low", "close"))
     local = df.index.tz_convert(LDN)
     mins = local.hour * 60 + local.minute
-    gap = np.diff(df.index.as_unit("ns").asi8) > 6 * 3600 * 10**9
+    gap = np.diff(df.index.as_unit("ns").asi8) > gap_hours * 3600 * 10**9
     run_end = np.empty(len(df), np.int64)
     end = len(df) - 1
     for i in range(len(df) - 1, -1, -1):

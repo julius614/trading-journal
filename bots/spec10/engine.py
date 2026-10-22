@@ -38,6 +38,22 @@ class CostModel:
     use_bar_spread: bool = False
     leverage_cap: float = 10.0
     tick: float = 0.00001
+    financing_per_year: float = 0.0    # swap, fraction of notional per year (360-day basis)
+
+
+def rollover_nights(entry: pd.Timestamp, exit_: pd.Timestamp, hour_utc: int = 21) -> int:
+    """Weekday rollovers (hour_utc UTC) strictly between entry and exit; Wednesday counts
+    three times (the weekend is charged then)."""
+    if exit_ <= entry:
+        return 0
+    n = 0
+    day = entry.normalize()
+    while day <= exit_:
+        roll = day + pd.Timedelta(hours=hour_utc)
+        if day.dayofweek < 5 and entry < roll < exit_:
+            n += 3 if day.dayofweek == 2 else 1
+        day += pd.Timedelta(days=1)
+    return n
 
 
 def pip_size(symbol: str) -> float:
@@ -103,7 +119,9 @@ def price_trades(trades: Sequence[Trade], costs: Dict[str, CostModel],
         spread_cost = 0.5 * (s_in + s_out) * units
         slip = c.slippage * units * ((t.entry_kind in SLIPPED) + (t.exit_kind in SLIPPED))
         comm = 2 * c.commission_frac * notional
-        cost = mult * (spread_cost + slip + comm)
+        fin = (c.financing_per_year / 360 * notional * rollover_nights(t.entry_time, t.exit_time)
+               if c.financing_per_year else 0.0)
+        cost = mult * (spread_cost + slip + comm + fin)
         net = gross - cost
         rows.append((t.symbol, t.side, t.entry_time, t.entry_price, t.entry_kind, t.exit_time,
                      t.exit_price, t.exit_kind, t.stop, notional, gross, cost, net, net / ONE_R,
