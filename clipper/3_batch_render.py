@@ -52,6 +52,25 @@ def write_cutlist(path: Path, rows: list[dict]) -> None:
     raise PermissionError(f"Could not update {path}. Close it in Excel and run again.")
 
 
+def import_cuts(cut_path: Path, log) -> None:
+    """Copy new rows from cuts/*.csv (written by Claude, tracked in git) into the local
+    cutlist.csv (not tracked, holds DONE/FAILED status). Existing clip_ids are never touched."""
+    rows = read_cutlist(cut_path) if cut_path.exists() else []
+    have = {r["clip_id"] for r in rows}
+    added = 0
+    for f in sorted((ROOT / "cuts").glob("*.csv")):
+        for r in read_cutlist(f):
+            if r["clip_id"] and r["clip_id"] not in have:
+                r["status"] = "PENDING"
+                rows.append(r)
+                have.add(r["clip_id"])
+                added += 1
+    if added or not cut_path.exists():
+        write_cutlist(cut_path, rows)
+    if added:
+        log.info("Imported %d new clip(s) from cuts/", added)
+
+
 def fit_filter(crop: str, w: int, h: int, mode: str) -> str:
     cw, ch, cx, cy = parse_crop(crop)
     base = f"crop={cw}:{ch}:{cx}:{cy}"
@@ -201,6 +220,8 @@ def main() -> None:
     log = setup_logging(cfg, "render")
     require_ffmpeg()
     cut_path = Path(args.cutlist) if args.cutlist else get_path(cfg, "cutlist")
+    if not args.cutlist:
+        import_cuts(cut_path, log)
     rows = read_cutlist(cut_path)
 
     seen, todo = set(), []

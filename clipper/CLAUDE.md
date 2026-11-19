@@ -8,7 +8,7 @@ into 9:16 split-screen clips. The repo-wide hard rules (no secrets, public repo)
 |---|---|---|
 | 1 | `python 1_ingest.py --streamer kai --url <VOD_URL> [--max-hours 4]` | `vods/kai_<date>.mp4`, `preview_kai.png`, `preview_kai_boxes.png` |
 | 2 | `python 2_analyze.py --input vods/kai_<date>.mp4` | `analysis/<vod>_analyzed.json`, `analysis/<vod>_words.json` |
-| 3 | Claude writes rows to `cutlist.csv` (rules below) | |
+| 3 | Claude writes `cuts/<vod_stem>.csv` (rules below); render imports it | |
 | 4 | `python 3_batch_render.py` | `output/<account_tag>/<clip_id>.mp4`, status set to `DONE` |
 | 5 | `python 4_manifest.py --date YYYY-MM-DD` | `upload_manifest.csv` |
 
@@ -51,6 +51,13 @@ Self-test: `python test_pipeline.py`.
    re-cut version of the same moment on two accounts.
 8. **Only clip creators who allow it.** Many streamers run clipping programmes or openly
    allow clips. If the user hasn't confirmed this for a streamer, say so once.
+
+## Where clip rows go
+- Claude writes new rows to **`cuts/<vod_stem>.csv`** (tracked in git) and pushes.
+- The user's `cutlist.csv` is local only (gitignored): `3_batch_render.py` imports any new
+  `clip_id` from `cuts/*.csv` into it as PENDING, then renders and marks DONE/FAILED there.
+  This keeps `git pull` from ever conflicting with render status.
+- Never reuse a clip_id. To change a clip that already rendered, add a new clip_id.
 
 ## cutlist.csv format
 ```

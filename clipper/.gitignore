@@ -11,3 +11,4 @@ upload_manifest.csv
 *.csv.tmp
 fonts/*
 !fonts/.gitkeep
+cutlist.csv
