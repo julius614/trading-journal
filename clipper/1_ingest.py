@@ -53,9 +53,10 @@ def download(url: str, out_path: Path, max_hours: float | None, latest: bool, lo
             "skipped on purpose: wait until it ends, or use the link of an older finished stream.")
 
 
-def make_previews(vod: Path, streamer: str, profile: dict, log) -> None:
+def make_previews(vod: Path, streamer: str, profile: dict, log, at: float | None = None) -> None:
     duration = probe_duration(vod)
-    t = 15 * 60 if duration > 16 * 60 else duration / 2
+    t = at if at is not None else (15 * 60 if duration > 16 * 60 else duration / 2)
+    t = min(max(0.0, t), max(0.0, duration - 1))
     plain = ROOT / f"preview_{streamer}.png"
     run(["ffmpeg", "-y", "-v", "error", "-ss", f"{t:.2f}", "-i", str(vod),
          "-frames:v", "1", str(plain)])
@@ -85,6 +86,7 @@ def main() -> None:
     src.add_argument("--latest", action="store_true", help="newest VOD from the streamer's channel_url")
     src.add_argument("--preview-only", metavar="VOD", help="skip download, just make preview images")
     ap.add_argument("--max-hours", type=float, default=None, help="only download the first N hours")
+    ap.add_argument("--at", type=float, default=None, help="preview time in minutes (default 15)")
     args = ap.parse_args()
 
     cfg = load_config()
@@ -107,7 +109,7 @@ def main() -> None:
         download(url, vod, args.max_hours, args.latest, log)
         log.info("Saved %s (%.1f min)", vod, probe_duration(vod) / 60)
 
-    make_previews(vod, args.streamer, profile, log)
+    make_previews(vod, args.streamer, profile, log, None if args.at is None else args.at * 60)
     print(f"\nNext: python 2_analyze.py --input {vod.relative_to(ROOT) if vod.is_relative_to(ROOT) else vod}")
 
 

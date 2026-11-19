@@ -10,9 +10,9 @@
     "speed": {
       "aliases": ["ishowspeed", "ishow speed"],
       "channel_url": "https://www.youtube.com/@IShowSpeed/streams",
-      "webcam_crop": "480:300:0:780",
-      "gameplay_crop": "1080:1080:420:0",
-      "notes": "PLACEHOLDER crops. Verify with the preview image."
+      "webcam_crop": "420:308:0:410",
+      "gameplay_crop": "934:1080:493:0",
+      "notes": "Measured from the 2026-11-19 VOD preview: webcam sits on the left edge, mid-height."
     },
     "xqc": {
       "aliases": ["xqcow"],
