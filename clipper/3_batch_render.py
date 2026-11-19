@@ -92,10 +92,24 @@ def render_one(job: dict) -> tuple[str, str, str]:
         vod = resolve_vod(cfg, row["vod_file"])
         start, end = parse_time(row["start_time"]), parse_time(row["end_time"])
         length = end - start
-        prof = cfg["streamers"][row["streamer"]]
-        src_w, src_h = probe_video_size(vod)
+        # Per-clip overrides: a stream's layout changes (game vs. just chatting), so a row
+        # may set its own webcam_crop / gameplay_crop, or layout=fit (whole frame, no split).
+        prof = dict(cfg["streamers"][row["streamer"]])
         for key in ("webcam_crop", "gameplay_crop"):
-            check_crop_fits(prof[key], src_w, src_h)
+            if (row.get(key) or "").strip():
+                prof[key] = row[key].strip()
+        layout = (row.get("layout") or "split").strip().lower()
+        src_w, src_h = probe_video_size(vod)
+        if layout == "split":
+            for key in ("webcam_crop", "gameplay_crop"):
+                check_crop_fits(prof[key], src_w, src_h)
+        elif layout == "fit":
+            # video sits in the middle, so move captions below it and the hook above it
+            rs = json.loads(json.dumps(rs))
+            rs["captions"]["y"] = rs.get("fit_caption_y", 1420)
+            rs["hook"]["y"] = rs.get("fit_hook_y", 470)
+        else:
+            raise ValueError(f"layout must be 'split' or 'fit', got {layout!r}")
 
         W, H = (int(v) for v in rs["resolution"].split("x"))
         top_h, bot_h = rs["webcam_height"], rs["gameplay_height"]
@@ -119,10 +133,18 @@ def render_one(job: dict) -> tuple[str, str, str]:
                 ass_opt += ":fontsdir=fonts"
 
             ln = rs["loudnorm"]
-            fc = (f"[0:v]fps={rs['fps']},split=2[a][b];"
-                  f"[a]{fit_filter(prof['webcam_crop'], W, top_h, rs.get('webcam_fit', 'cover'))}[top];"
-                  f"[b]{fit_filter(prof['gameplay_crop'], W, bot_h, 'cover')}[bot];"
-                  f"[top][bot]vstack=inputs=2,{ass_opt},format=yuv420p[v];"
+            if layout == "fit":
+                video = (f"[0:v]fps={rs['fps']},split=2[a][b];"
+                         f"[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+                         f"boxblur=20:2,eq=brightness=-0.12,setsar=1[bg];"
+                         f"[b]scale={W}:-2:flags=lanczos,setsar=1[fg];"
+                         f"[bg][fg]overlay=0:(H-h)/2,{ass_opt},format=yuv420p[v];")
+            else:
+                video = (f"[0:v]fps={rs['fps']},split=2[a][b];"
+                         f"[a]{fit_filter(prof['webcam_crop'], W, top_h, rs.get('webcam_fit', 'cover'))}[top];"
+                         f"[b]{fit_filter(prof['gameplay_crop'], W, bot_h, 'cover')}[bot];"
+                         f"[top][bot]vstack=inputs=2,{ass_opt},format=yuv420p[v];")
+            fc = (video +
                   f"[0:a]loudnorm=I={ln['I']}:TP={ln['TP']}:LRA={ln['LRA']},"
                   f"aresample=48000[aout]")
 
@@ -160,6 +182,8 @@ def validate(row: dict, cfg: dict) -> str | None:
         return str(e)
     if not rs["min_clip_seconds"] <= length <= rs["max_clip_seconds"]:
         return f"length {length:.1f}s is outside {rs['min_clip_seconds']}-{rs['max_clip_seconds']}s"
+    if (row.get("layout") or "split").strip().lower() not in ("split", "fit"):
+        return f"layout must be split or fit, got {row.get('layout')!r}"
     if row["account_tag"] and cfg.get("accounts") and row["account_tag"] not in cfg["accounts"]:
         return f"account_tag '{row['account_tag']}' is not in config.json accounts"
     return None

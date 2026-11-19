@@ -98,6 +98,13 @@ def main() -> None:
              str(OUT / f"frame_{t:.1f}s.png")])
     check((OUT / "frame_1.5s.png").exists(), "frames saved (1.5 s shows the hook, 5.0 s captions only)")
 
+    row_fit = dict(row, clip_id="test_fit", layout="fit", webcam_crop="", gameplay_crop="")
+    _, status, msg = render.render_one({"cfg": cfg, "row": row_fit, "threads": 4})
+    fit_out = OUT / "output" / "_test" / "test_fit.mp4"
+    check(status == "DONE" and probe_video_size(fit_out) == (1080, 1920), f"layout=fit renders: {msg[:120]}")
+    run(["ffmpeg", "-y", "-v", "error", "-ss", "1.5", "-i", str(fit_out), "-frames:v", "1",
+         str(OUT / "frame_fit_1.5s.png")])
+
     print("4. Schedule maths")
     manifest = load_module("4_manifest.py")
     rng = random.Random(1)

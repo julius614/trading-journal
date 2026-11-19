@@ -61,6 +61,11 @@ kai_1119_01,kai,kai_2026-11-19.mp4,01:12:03.4,01:13:04.9,BRO BROKE GTA 6 PHYSICS
 - `vod_file`: the file name in `vods/`.
 - Times as `HH:MM:SS.s` from the VOD start.
 - `status`: `PENDING` for new rows. The renderer sets `DONE`, `FAILED: ...` or `ERROR: ...`.
+- Optional extra columns: `layout` (`split` default, or `fit` = whole frame centred on a
+  blurred background, for moments where the webcam is big or moves, e.g. Ome.tv / just
+  chatting), and `webcam_crop` / `gameplay_crop` to override the streamer's default crops
+  for that clip. Streams change layout, so check a frame (`1_ingest.py --preview-only
+  <vod> --at <minutes>`) when a clip comes from a different segment of the stream.
 - Append rows. Never edit or delete `DONE` rows.
 - After writing, show the user a short table (id, length, hook, account, one-line reason).
 
