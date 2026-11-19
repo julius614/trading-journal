@@ -72,7 +72,11 @@ def transcribe(wav: Path, model_name: str, language: str | None, log) -> list[di
     device, compute = ("cuda", "float16") if cuda else ("cpu", "int8")
     log.info("Whisper model=%s device=%s compute=%s", model_name, device, compute)
     model = WhisperModel(model_name, device=device, compute_type=compute)
-    segments, info = model.transcribe(str(wav), language=language, word_timestamps=True,
+    # Pass the samples as an array: avoids faster-whisper's PyAV decoder, which breaks
+    # with some PyAV versions (e.g. "unexpected keyword argument 'metadata_errors'").
+    with wave.open(str(wav), "rb") as w:
+        audio = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
+    segments, info = model.transcribe(audio, language=language, word_timestamps=True,
                                       vad_filter=True, beam_size=1,
                                       condition_on_previous_text=False)
     log.info("Language: %s (p=%.2f), audio %.0f min", info.language, info.language_probability,
