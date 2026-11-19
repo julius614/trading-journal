@@ -2,7 +2,8 @@
 
 Usage:
   python review.py --input vods\\speed_2026-11-19.mp4 [--top 12]
-  python review.py --input vods\\speed_2026-11-19.mp4 --from 3:00 --to 5:30   (any range)
+  python review.py --input vods\\speed_2026-11-19.mp4 --after 30:00 --before 60:00 --top 15
+  python review.py --input vods\\speed_2026-11-19.mp4 --from 3:00 --to 5:30   (full transcript of a range)
 """
 from __future__ import annotations
 
@@ -34,6 +35,8 @@ def main() -> None:
     ap.add_argument("--top", type=int, default=12)
     ap.add_argument("--from", dest="t_from", default=None)
     ap.add_argument("--to", dest="t_to", default=None)
+    ap.add_argument("--after", default=None, help="only candidates starting at/after this time")
+    ap.add_argument("--before", default=None, help="only candidates ending at/before this time")
     args = ap.parse_args()
 
     cfg = load_config()
@@ -49,8 +52,14 @@ def main() -> None:
         return
 
     data = json.loads((adir / f"{stem}_analyzed.json").read_text(encoding="utf-8"))
-    print(f"=== {stem}  ({data['duration_hms'][:8]})  top {args.top} of {len(data['candidates'])}")
-    for c in data["candidates"][: args.top]:
+    cands = data["candidates"]
+    if args.after:
+        cands = [c for c in cands if c["start"] >= parse_time(args.after)]
+    if args.before:
+        cands = [c for c in cands if c["end"] <= parse_time(args.before)]
+    rng = f"  window {args.after or 'start'}-{args.before or 'end'}" if (args.after or args.before) else ""
+    print(f"=== {stem}  ({data['duration_hms'][:8]})  top {min(args.top, len(cands))} of {len(cands)}{rng}")
+    for c in cands[: args.top]:
         print(f"\n#{c['rank']}  {c['start_hms'][:8]}-{c['end_hms'][:8]}  score {c['hype_score']}  "
               f"loudest {c['peak_hms'][:8]}")
         print("\n".join(lines_for(words, c["start"], c["end"])))
