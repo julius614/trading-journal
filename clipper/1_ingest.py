@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from common import (ROOT, check_crop_fits, get_path, load_config, parse_crop, probe_duration,
+from common import (ROOT, resolve_streamer, check_crop_fits, get_path, load_config, parse_crop, probe_duration,
                     probe_video_size, require_ffmpeg, run, setup_logging)
 
 FORMAT = ("bv*[height<=1080][ext=mp4]+ba[ext=m4a]/"
@@ -85,8 +85,12 @@ def main() -> None:
     cfg = load_config()
     log = setup_logging(cfg, "ingest")
     require_ffmpeg()
-    if args.streamer not in cfg["streamers"]:
+    key = resolve_streamer(cfg, args.streamer)
+    if key is None:
         sys.exit(f"Unknown streamer '{args.streamer}'. Known: {', '.join(cfg['streamers'])}")
+    args.streamer = key
+    if args.url and not args.url.lower().startswith(("http://", "https://")):
+        sys.exit(f"'{args.url}' is not a link. Paste the full VOD address, starting with https://")
     profile = cfg["streamers"][args.streamer]
 
     if args.preview_only:

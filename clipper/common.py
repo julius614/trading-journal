@@ -117,6 +117,16 @@ def check_crop_fits(crop: str, src_w: int, src_h: int) -> None:
         raise ValueError(f"crop {crop} goes outside the {src_w}x{src_h} source frame")
 
 
+def resolve_streamer(cfg: dict, name: str) -> str | None:
+    """Case-insensitive lookup by key or alias: 'SPEED', 'IShowSpeed' -> 'speed'."""
+    want = name.strip().lower().replace(" ", "")
+    for key, prof in cfg["streamers"].items():
+        names = [key] + prof.get("aliases", [])
+        if want in (n.lower().replace(" ", "") for n in names):
+            return key
+    return None
+
+
 def find_analysis_words(cfg: dict, vod_file: str | Path) -> Path:
     return get_path(cfg, "analysis") / f"{Path(vod_file).stem}_words.json"
 

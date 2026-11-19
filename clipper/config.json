@@ -1,18 +1,21 @@
 {
   "streamers": {
     "kai": {
+      "aliases": ["kaicenat", "kai cenat"],
       "channel_url": "https://www.twitch.tv/kaicenat/videos?filter=archives",
       "webcam_crop": "480:300:1440:0",
       "gameplay_crop": "1080:1080:420:0",
       "notes": "PLACEHOLDER crops. Run 1_ingest.py and check preview_kai_boxes.png before rendering."
     },
     "speed": {
+      "aliases": ["ishowspeed", "ishow speed"],
       "channel_url": "https://www.youtube.com/@IShowSpeed/streams",
       "webcam_crop": "480:300:0:780",
       "gameplay_crop": "1080:1080:420:0",
       "notes": "PLACEHOLDER crops. Verify with the preview image."
     },
     "xqc": {
+      "aliases": ["xqcow"],
       "channel_url": "https://www.twitch.tv/xqc/videos?filter=archives",
       "webcam_crop": "400:300:1520:780",
       "gameplay_crop": "1080:1080:420:0",
