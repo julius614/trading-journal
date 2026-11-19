@@ -42,7 +42,7 @@ def make_synthetic_vod(path: Path) -> None:
          "-f", "lavfi", "-i", "color=c=0x8040c0:size=480x300:rate=30:duration=10",
          "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=10",
          "-filter_complex",
-         "[0:v][1:v]overlay=1440:0,drawtext=text='WEBCAM':x=1560:y=130:fontsize=48:fontcolor=white[v];"
+         "[0:v][1:v]overlay=1440:0[v];"
          "[2:a]volume='if(between(t,6,7),1.0,0.05)':eval=frame[a]",
          "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-metadata", "title=SECRET SOURCE TITLE", str(path)])
