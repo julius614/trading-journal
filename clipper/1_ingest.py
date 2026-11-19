@@ -35,17 +35,22 @@ def download(url: str, out_path: Path, max_hours: float | None, latest: bool, lo
            "-f", FORMAT, "--merge-output-format", "mp4",
            "-o", str(out_path), "--no-part", "--concurrent-fragments", "8",
            "--retries", "10", "--fragment-retries", "10"]
+    # Never record a stream that is still live (or scheduled): only finished VODs.
+    cmd += ["--match-filter", "!is_live & live_status!=is_upcoming & live_status!=post_live"]
     if latest:
-        cmd += ["--playlist-items", "1"]
+        cmd += ["--playlist-items", "1:10", "--max-downloads", "1"]
     else:
         cmd += ["--no-playlist"]
     if max_hours:
         secs = int(max_hours * 3600)
-        cmd += ["--download-sections", f"*0-{secs}", "--force-keyframes-at-cuts"]
+        cmd += ["--download-sections", f"*0-{secs}"]
     log.info("Downloading: %s", url)
     proc = subprocess.run(cmd)
-    if proc.returncode != 0 or not out_path.exists():
-        raise SystemExit(f"yt-dlp failed (exit {proc.returncode}). See the messages above.")
+    # exit code 101 = stopped after --max-downloads, which is fine
+    if not out_path.exists():
+        raise SystemExit(
+            f"Nothing was downloaded (yt-dlp exit {proc.returncode}). If the stream is still LIVE it is "
+            "skipped on purpose: wait until it ends, or use the link of an older finished stream.")
 
 
 def make_previews(vod: Path, streamer: str, profile: dict, log) -> None:
