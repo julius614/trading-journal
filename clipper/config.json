@@ -3,9 +3,9 @@
     "kai": {
       "aliases": ["kaicenat", "kai cenat"],
       "channel_url": "https://www.twitch.tv/kaicenat/videos?filter=archives",
-      "webcam_crop": "480:300:1440:0",
-      "gameplay_crop": "1080:1080:420:0",
-      "notes": "PLACEHOLDER crops. Run 1_ingest.py and check preview_kai_boxes.png before rendering."
+      "webcam_crop": "368:204:0:266",
+      "gameplay_crop": "934:1080:493:0",
+      "notes": "Measured from kai_2026-11-19 (GTA IV subathon): webcam left edge, upper-middle. Re-check for new stream layouts."
     },
     "speed": {
       "aliases": ["ishowspeed", "ishow speed"],
