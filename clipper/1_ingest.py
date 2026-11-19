@@ -30,8 +30,10 @@ def next_free_name(folder: Path, stem: str) -> Path:
     return path
 
 
-def download(url: str, out_path: Path, max_hours: float | None, latest: bool, log) -> None:
+def download(url: str, out_path: Path, max_hours: float | None, latest: bool, log, archive: Path) -> None:
     cmd = [sys.executable, "-m", "yt_dlp", url,
+           # remember every downloaded video; never fetch the same one twice
+           "--download-archive", str(archive), "--break-on-existing",
            "-f", FORMAT, "--merge-output-format", "mp4",
            "-o", str(out_path), "--no-part", "--concurrent-fragments", "8",
            "--retries", "10", "--fragment-retries", "10"]
@@ -49,8 +51,9 @@ def download(url: str, out_path: Path, max_hours: float | None, latest: bool, lo
     # exit code 101 = stopped after --max-downloads, which is fine
     if not out_path.exists():
         raise SystemExit(
-            f"Nothing was downloaded (yt-dlp exit {proc.returncode}). If the stream is still LIVE it is "
-            "skipped on purpose: wait until it ends, or use the link of an older finished stream.")
+            f"Nothing new was downloaded (yt-dlp exit {proc.returncode}). Either the newest finished "
+            "stream is already in vods/ (see archive/downloaded.txt), or the newest streams are still "
+            "LIVE or processing (skipped on purpose). Try again later, or use --url with a specific link.")
 
 
 def make_previews(vod: Path, streamer: str, profile: dict, log, at: float | None = None) -> None:
@@ -73,7 +76,12 @@ def make_previews(vod: Path, streamer: str, profile: dict, log, at: float | None
             log.warning("%s: %s", key, e)
         boxes.append(f"drawbox=x={x}:y={y}:w={w}:h={h}:color={color}@0.9:t=6")
     boxed = ROOT / f"preview_{streamer}_boxes.png"
-    run(["ffmpeg", "-y", "-v", "error", "-i", str(plain), "-vf", ",".join(boxes), str(boxed)])
+    try:
+        run(["ffmpeg", "-y", "-v", "error", "-i", str(plain), "-vf", ",".join(boxes), str(boxed)])
+    except RuntimeError:
+        # usually: the old picture is still open in the Photos app, which locks the file
+        boxed = ROOT / f"preview_{streamer}_boxes_{dt.datetime.now():%H%M%S}.png"
+        run(["ffmpeg", "-y", "-v", "error", "-i", str(plain), "-vf", ",".join(boxes), str(boxed)])
     log.info("Crop check image: %s  (red = webcam_crop, green = gameplay_crop)", boxed)
     log.info("Source is %dx%d. Crops in config.json are for this size.", src_w, src_h)
 
@@ -106,7 +114,7 @@ def main() -> None:
         vods = get_path(cfg, "vods")
         vod = next_free_name(vods, f"{args.streamer}_{dt.date.today().isoformat()}")
         url = profile["channel_url"] if args.latest else args.url
-        download(url, vod, args.max_hours, args.latest, log)
+        download(url, vod, args.max_hours, args.latest, log, get_path(cfg, "archive") / "downloaded.txt")
         log.info("Saved %s (%.1f min)", vod, probe_duration(vod) / 60)
 
     make_previews(vod, args.streamer, profile, log, None if args.at is None else args.at * 60)
