@@ -1,0 +1,104 @@
+{
+  "streamers": {
+    "kai": {
+      "channel_url": "https://www.twitch.tv/kaicenat/videos?filter=archives",
+      "webcam_crop": "480:300:1440:0",
+      "gameplay_crop": "1080:1080:420:0",
+      "notes": "PLACEHOLDER crops. Run 1_ingest.py and check preview_kai_boxes.png before rendering."
+    },
+    "speed": {
+      "channel_url": "https://www.youtube.com/@IShowSpeed/streams",
+      "webcam_crop": "480:300:0:780",
+      "gameplay_crop": "1080:1080:420:0",
+      "notes": "PLACEHOLDER crops. Verify with the preview image."
+    },
+    "xqc": {
+      "channel_url": "https://www.twitch.tv/xqc/videos?filter=archives",
+      "webcam_crop": "400:300:1520:780",
+      "gameplay_crop": "1080:1080:420:0",
+      "notes": "PLACEHOLDER crops. Verify with the preview image."
+    }
+  },
+
+  "render_settings": {
+    "resolution": "1080x1920",
+    "webcam_height": 672,
+    "gameplay_height": 1248,
+    "webcam_fit": "cover",
+    "fps": 30,
+    "video_encoder": "libx264",
+    "x264_preset": "veryfast",
+    "crf": 20,
+    "audio_bitrate": "192k",
+    "loudnorm": { "I": -14, "TP": -1.5, "LRA": 11 },
+    "render_workers": 2,
+    "min_clip_seconds": 28,
+    "max_clip_seconds": 62,
+
+    "captions": {
+      "font_name": "Arial Black",
+      "fonts_dir": "./fonts",
+      "font_size": 78,
+      "outline": 7,
+      "shadow": 2,
+      "uppercase": true,
+      "words_per_line": 4,
+      "max_gap_seconds": 0.6,
+      "y": 672,
+      "base_color": "white",
+      "highlight_pool": ["yellow", "cyan", "lime"]
+    },
+
+    "hook": {
+      "start": 0.0,
+      "end": 3.2,
+      "y": 760,
+      "font_size": 64,
+      "text_color": "black",
+      "box_color": "white",
+      "box_padding_x": 36,
+      "box_padding_y": 22,
+      "corner_radius": 26,
+      "max_chars": 34
+    }
+  },
+
+  "accounts": {
+    "gta_main": { "platforms": ["tiktok", "shorts", "reels"], "niche": "GTA 6 highlights" },
+    "gta_fails": { "platforms": ["tiktok", "shorts"], "niche": "GTA 6 fails and physics" },
+    "streamer_moments": { "platforms": ["tiktok", "reels"], "niche": "streamer reactions" }
+  },
+
+  "schedule": {
+    "posts_per_account_per_day": [3, 4],
+    "min_gap_hours": 3.5,
+    "window_start": "08:00",
+    "window_end": "23:30",
+    "timezone_label": "local"
+  },
+
+  "analysis": {
+    "whisper_model": "small",
+    "window_seconds": 60,
+    "window_step_seconds": 15,
+    "rms_window_seconds": 2.0,
+    "rms_hop_seconds": 1.0,
+    "baseline_minutes": 5,
+    "top_windows": 60,
+    "hype_words": [
+      "no way", "oh my god", "omg", "bro", "chat", "what", "yo", "let's go", "lets go",
+      "run", "help", "wait", "nah", "crazy", "insane", "dead", "died", "bruh", "why",
+      "stop", "go go", "oh no", "holy", "wtf", "scream", "police", "cops"
+    ]
+  },
+
+  "paths": {
+    "vods": "./vods",
+    "analysis": "./analysis",
+    "output": "./output",
+    "logs": "./logs",
+    "archive": "./archive",
+    "cutlist": "./cutlist.csv",
+    "manifest": "./upload_manifest.csv"
+  }
+}

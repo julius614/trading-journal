@@ -11,6 +11,10 @@
 Use the `kb-learn` skill. It files the item, distils lessons into LESSONS.md, and commits
 and pushes.
 
+## Other projects in this repo
+- `clipper/` is a separate video-clipping pipeline. When working on it, follow
+  `clipper/CLAUDE.md`. The trading rules here don't apply to it.
+
 ## About the user
 - Not technical. Uses Windows PowerShell and an MT5 MetaQuotes-Demo account (EUR).
 - Answer in plain language with exact copy-paste commands. Say `cd` into the repo folder
