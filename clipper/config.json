@@ -67,13 +67,14 @@
   },
 
   "accounts": {
-    "gta_main": { "platforms": ["tiktok", "shorts", "reels"], "niche": "GTA 6 highlights" },
-    "gta_fails": { "platforms": ["tiktok", "shorts"], "niche": "GTA 6 fails and physics" },
-    "streamer_moments": { "platforms": ["tiktok", "reels"], "niche": "streamer reactions" }
+    "YT_01": { "platform": "youtube_shorts", "daily_cap": 1, "active": true },
+    "TT_01": { "platform": "tiktok", "daily_cap": 1, "active": true },
+    "IG_01": { "platform": "instagram_reels", "daily_cap": 1, "active": true }
   },
 
   "schedule": {
-    "posts_per_account_per_day": [3, 4],
+    "roster_file": "./accounts_roster.csv",
+    "clip_seconds": [28, 62],
     "min_gap_hours": 3.5,
     "window_start": "08:00",
     "window_end": "23:30",

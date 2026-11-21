@@ -10,7 +10,7 @@ into 9:16 split-screen clips. The repo-wide hard rules (no secrets, public repo)
 | 2 | `python 2_analyze.py --input vods/kai_<date>.mp4` | `analysis/<vod>_analyzed.json`, `analysis/<vod>_words.json` |
 | 3 | Claude writes `cuts/<vod_stem>.csv` (rules below); render imports it | |
 | 4 | `python 3_batch_render.py` | `output/<account_tag>/<clip_id>.mp4`, status set to `DONE` |
-| 5 | `python 4_manifest.py --date YYYY-MM-DD` | `upload_manifest.csv` |
+| 5 | `python 4_manifest.py --date YYYY-MM-DD --days N` | `upload_manifest.csv` |
 
 Self-test: `python test_pipeline.py`.
 
@@ -46,9 +46,10 @@ Self-test: `python test_pipeline.py`.
    `BRO BROKE GTA 6 PHYSICS`, `INSTANT REGRET IN VICE CITY`, `HE DID NOT SEE THAT COMING`.
    No clickbait the clip doesn't pay off. Max 34 characters. Avoid commas (CSV).
 6. **No overlaps.** Clips from the same VOD must not share more than 5 s of footage.
-7. **One clip, one account.** Each moment goes to exactly one `account_tag` (from
-   `config.json -> accounts`), matched to that account's niche. Never put the same or a
-   re-cut version of the same moment on two accounts.
+7. **One clip, one account.** Accounts are `YT_01` (YouTube Shorts), `TT_01` (TikTok) and
+   `IG_01` (Instagram Reels). Every clip is posted on exactly ONE of them, never duplicated
+   or re-cut onto another. Set `account_tag` to an account id to pin a clip, or to `pool`
+   to let `4_manifest.py` assign it to whichever account has room that day.
 8. **Only clip creators who allow it.** Many streamers run clipping programmes or openly
    allow clips. If the user hasn't confirmed this for a streamer, say so once.
 
@@ -75,6 +76,14 @@ kai_1119_01,kai,kai_2026-11-19.mp4,01:12:03.4,01:13:04.9,BRO BROKE GTA 6 PHYSICS
   <vod> --at <minutes>`) when a clip comes from a different segment of the stream.
 - Append rows. Never edit or delete `DONE` rows.
 - After writing, show the user a short table (id, length, hook, account, one-line reason).
+
+## Accounts and scheduling
+- `config.json -> accounts` holds ids, platforms and `daily_cap` (warm-up: 1 per account per
+  day). Handles live only in `accounts_roster.csv` (gitignored; template
+  `accounts_roster.example.csv`), which also overrides `daily_cap` / `active`.
+- `4_manifest.py` schedules each rendered clip once, on one account, at most `daily_cap` per
+  account per day, only if 28-62 s long, and remembers scheduled clips in
+  `archive/scheduled.json`. Raise `daily_cap` to 3-4 in the roster once accounts are warmed up.
 
 ## Render facts (for answering questions)
 - 1080x1920: webcam scaled to fill the top 1080x672, gameplay to fill the bottom 1080x1248.

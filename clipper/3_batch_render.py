@@ -134,7 +134,7 @@ def render_one(job: dict) -> tuple[str, str, str]:
         top_h, bot_h = rs["webcam_height"], rs["gameplay_height"]
         highlight = random.Random(clip_id).choice(rs["captions"]["highlight_pool"])
 
-        out_dir = get_path(cfg, "output") / (row["account_tag"] or "unassigned")
+        out_dir = get_path(cfg, "output") / (row["account_tag"] or "pool")
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"{clip_id}.mp4"
 
@@ -203,8 +203,6 @@ def validate(row: dict, cfg: dict) -> str | None:
         return f"length {length:.1f}s is outside {rs['min_clip_seconds']}-{rs['max_clip_seconds']}s"
     if (row.get("layout") or "split").strip().lower() not in ("split", "fit"):
         return f"layout must be split or fit, got {row.get('layout')!r}"
-    if row["account_tag"] and cfg.get("accounts") and row["account_tag"] not in cfg["accounts"]:
-        return f"account_tag '{row['account_tag']}' is not in config.json accounts"
     return None
 
 
